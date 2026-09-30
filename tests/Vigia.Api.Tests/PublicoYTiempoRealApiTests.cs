@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Shouldly;
 
-using Vigia.Api.Contratos;
+using Vigia.Contratos;
 using Vigia.Datos.Persistencia;
 using Vigia.Dominio.Monitores;
 using Vigia.Dominio.Seguimiento;

@@ -3,8 +3,8 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 using Vigia.Api.Consultas;
-using Vigia.Api.Contratos;
 using Vigia.Api.Seguridad;
+using Vigia.Contratos;
 
 namespace Vigia.Api.Endpoints;
 

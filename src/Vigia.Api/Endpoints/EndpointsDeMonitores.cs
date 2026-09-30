@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 using Vigia.Api.Consultas;
-using Vigia.Api.Contratos;
 using Vigia.Comprobaciones;
+using Vigia.Contratos;
 using Vigia.Datos.Persistencia;
 using Vigia.Dominio.Comun;
 using Vigia.Dominio.Mantenimiento;

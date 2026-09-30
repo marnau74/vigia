@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vigia.Comprobaciones\Vigia.Comprobaciones.csproj" />
+    <ProjectReference Include="..\Vigia.Contratos\Vigia.Contratos.csproj" />
     <ProjectReference Include="..\Vigia.Datos\Vigia.Datos.csproj" />
     <ProjectReference Include="..\Vigia.ServiceDefaults\Vigia.ServiceDefaults.csproj" />
   </ItemGroup>

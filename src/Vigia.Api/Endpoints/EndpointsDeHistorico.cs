@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 
 using Vigia.Api.Consultas;
-using Vigia.Api.Contratos;
+using Vigia.Contratos;
 using Vigia.Datos.Persistencia;
 
 namespace Vigia.Api.Endpoints;
