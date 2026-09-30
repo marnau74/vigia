@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup Label="Aplicación">
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageVersion Include="DnsClient" Version="1.8.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
   </ItemGroup>
   <ItemGroup Label="API">
