@@ -12,6 +12,9 @@
     <Project Path="tests/Vigia.Api.Tests/Vigia.Api.Tests.csproj" />
     <Project Path="tests/Vigia.Arquitectura.Tests/Vigia.Arquitectura.Tests.csproj" />
     <Project Path="tests/Vigia.Comprobaciones.Tests/Vigia.Comprobaciones.Tests.csproj" />
+    <Project Path="tests/Vigia.Datos.Tests/Vigia.Datos.Tests.csproj" />
     <Project Path="tests/Vigia.Dominio.Tests/Vigia.Dominio.Tests.csproj" />
+    <Project Path="tests/Vigia.Tests.Comunes/Vigia.Tests.Comunes.csproj" />
+    <Project Path="tests/Vigia.Worker.Tests/Vigia.Worker.Tests.csproj" />
   </Folder>
 </Solution>

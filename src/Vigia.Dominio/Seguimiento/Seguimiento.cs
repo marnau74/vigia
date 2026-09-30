@@ -34,9 +34,12 @@ public sealed class Incidente
         Id = Guid.NewGuid();
         MonitorId = monitorId;
         AbiertoEn = abiertoEn.ToUniversalTime();
-        Causa = causa;
+        Causa = Recortar(causa);
         Fallos = fallos;
     }
+
+    /// <summary>Longitud máxima de la causa: lo bastante larga para un mensaje de error y lo bastante corta para no guardar una página entera.</summary>
+    public const int LongitudMaximaCausa = 500;
 
     public Guid Id { get; }
 
@@ -64,9 +67,11 @@ public sealed class Incidente
     /// <summary>Anota otro fallo mientras sigue caído y guarda su causa como la más reciente.</summary>
     public void RegistrarFallo(string causa)
     {
-        Causa = causa;
+        Causa = Recortar(causa);
         Fallos++;
     }
+
+    private static string Recortar(string causa) => causa.Length > LongitudMaximaCausa ? causa[..LongitudMaximaCausa] : causa;
 
     public void Cerrar(DateTimeOffset momento, MotivoDeCierre motivo)
     {

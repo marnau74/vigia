@@ -50,6 +50,21 @@ public sealed record TiemposPorEstado
         return new TiemposPorEstado(tiempos);
     }
 
+    /// <summary>Tiempos por estado a partir de sus duraciones (para reconstruir un agregado guardado).</summary>
+    public static TiemposPorEstado De(IEnumerable<(EstadoMonitor Estado, TimeSpan Duracion)> partes)
+    {
+        ArgumentNullException.ThrowIfNull(partes);
+
+        var tiempos = new TimeSpan[Enum.GetValues<EstadoMonitor>().Length];
+
+        foreach (var (estado, duracion) in partes)
+        {
+            tiempos[(int)estado] += duracion;
+        }
+
+        return new TiemposPorEstado(tiempos);
+    }
+
     /// <summary>
     /// Convierte el registro de cambios de estado en tramos: cada estado dura hasta el siguiente cambio y
     /// el último, hasta <paramref name="ahora"/>. Los cambios deben venir por orden de tiempo.

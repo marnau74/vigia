@@ -16,14 +16,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Vigia.Api\Vigia.Api.csproj" />
+    <ProjectReference Include="..\Vigia.Tests.Comunes\Vigia.Tests.Comunes.csproj" />
   </ItemGroup>
 
 </Project>
