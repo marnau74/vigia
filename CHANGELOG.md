@@ -48,6 +48,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
   concurrencia acotada; reintento inmediato antes de contar un fallo; recarga instantánea de cambios con
   `LISTEN/NOTIFY`; agregación y retención de fondo; métricas OpenTelemetry (`Vigia`). Probado con una
   simulación de 50 monitores durante una hora con reloj simulado.
+- **Avisos por correo (SMTP con MailKit) y Telegram** (ADR 0005) con bandeja de salida transaccional: los
+  avisos se guardan en la misma transacción que el incidente que los provoca y un proceso aparte los envía,
+  con reintentos espaciados y abandono a la vista tras seis intentos. Un índice único en la base de datos
+  impide dos avisos iguales, varias instancias no envían el mismo aviso y una caída simulada genera un
+  único aviso de caída y otro de recuperación. El cierre por mantenimiento no avisa de recuperación. El
+  token de Telegram nunca aparece en los errores.
 - **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
   tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
   redondeado hacia arriba; percentiles p50 y p95 de la latencia.
