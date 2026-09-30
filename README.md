@@ -6,7 +6,7 @@ correo y Telegram. Tiene un panel en tiempo real y una página de estado públic
 
 > En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
 > comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
-> planificador del worker. Faltan los avisos, la API y el panel.
+> planificador del worker y los avisos por correo y Telegram. Faltan la API y el panel.
 
 ## Cómo está pensado
 
@@ -94,6 +94,26 @@ limita cuántas corren simultáneamente. Un fallo se repite una vez antes de con
 configuración le llegan al instante por `LISTEN/NOTIFY` de PostgreSQL. Se prueba con una simulación de 50
 monitores durante una hora en segundos, con reloj simulado. Todo en el
 [ADR 0004](docs/adr/0004-datos-particionados-y-planificador.md).
+
+## Avisos
+
+Cuando un servicio cae (N fallos seguidos) se avisa **una vez**, y cuando se recupera, **otra**. Los avisos se
+guardan en la base de datos **en la misma transacción que el incidente** y un proceso aparte los envía con
+reintentos espaciados (bandeja de salida): no hay caída sin aviso ni aviso de algo que no pasó, un canal
+caído no pierde el mensaje y un índice único de la base de datos impide duplicados aunque haya reinicios o
+varias instancias. Todo razonado en el [ADR 0005](docs/adr/0005-avisos-con-bandeja-de-salida.md).
+
+Se configuran por variables de entorno (o el gestor de secretos; nunca en ficheros del repositorio):
+
+| Variable | Qué es |
+|---|---|
+| `Correo__Servidor`, `Correo__Puerto`, `Correo__Remitente`, `Correo__UsarTls`, `Correo__Usuario`, `Correo__Contrasena` | El servidor SMTP |
+| `Avisos__Destinatarios__0`, `__1`… | A quién se escribe por correo |
+| `Avisos__TokenTelegram` | El token del bot (se crea con @BotFather) |
+| `Avisos__ChatsTelegram__0`, `__1`… | Los chats a los que avisa el bot |
+
+Un canal solo se usa si está completo (destinatarios y servidor, o chats y token). En local, el entorno de
+Aspire manda los correos a Mailpit (<http://localhost:8026>).
 
 ## Cómo ejecutarlo
 

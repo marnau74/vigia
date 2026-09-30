@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vigia.Datos.Persistencia;
@@ -11,9 +12,11 @@ using Vigia.Datos.Persistencia;
 namespace Vigia.Datos.Migraciones
 {
     [DbContext(typeof(VigiaDbContext))]
-    partial class VigiaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930164509_Avisos")]
+    partial class Avisos
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -23,7 +23,7 @@ public class MigracionesTests : BaseDeDatosTest
 
         tablas.ShouldBe(
         [
-            "__EFMigrationsHistory", "cambios_estado", "grupos", "incidentes", "monitores", "resultados", "resultados_dia",
+            "__EFMigrationsHistory", "avisos", "cambios_estado", "grupos", "incidentes", "monitores", "resultados", "resultados_dia",
             "resultados_hora", "seguimientos", "ventanas_mantenimiento",
         ]);
     }

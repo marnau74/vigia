@@ -37,11 +37,13 @@ public sealed class MetricasVigia : IDisposable
     private readonly Histogram<double> _duracion;
     private readonly Counter<long> _errores;
     private readonly UpDownCounter<long> _incidentesAbiertos;
+    private readonly Counter<long> _avisos;
 
     public MetricasVigia()
     {
         _duracion = _medidor.CreateHistogram<double>("vigia.comprobaciones.duracion", "ms", "Duración de cada comprobación.");
         _errores = _medidor.CreateCounter<long>("vigia.comprobaciones.errores_internos", description: "Comprobaciones que no se pudieron guardar por un fallo del propio Vigia.");
+        _avisos = _medidor.CreateCounter<long>("vigia.avisos", description: "Avisos enviados o fallidos, por canal.");
         _incidentesAbiertos = _medidor.CreateUpDownCounter<long>("vigia.incidentes.abiertos", description: "Incidentes abiertos ahora mismo.");
     }
 
@@ -50,6 +52,12 @@ public sealed class MetricasVigia : IDisposable
             duracion.TotalMilliseconds,
             new KeyValuePair<string, object?>("tipo", tipo),
             new KeyValuePair<string, object?>("resultado", correcto ? "correcto" : "fallido"));
+
+    public void AvisoEnviado(string canal) =>
+        _avisos.Add(1, new KeyValuePair<string, object?>("canal", canal), new KeyValuePair<string, object?>("resultado", "enviado"));
+
+    public void AvisoFallido(string canal) =>
+        _avisos.Add(1, new KeyValuePair<string, object?>("canal", canal), new KeyValuePair<string, object?>("resultado", "fallido"));
 
     public void ErrorInterno() => _errores.Add(1);
 

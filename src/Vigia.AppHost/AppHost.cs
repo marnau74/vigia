@@ -30,6 +30,7 @@ builder.AddProject<Projects.Vigia_Worker>("worker")
     .WaitFor(baseDeDatos)
     .WithEnvironment("Correo__Servidor", smtp.Property(EndpointProperty.Host))
     .WithEnvironment("Correo__Puerto", smtp.Property(EndpointProperty.Port))
+    .WithEnvironment("Avisos__Destinatarios__0", "guardia@vigia.localhost")
     .WaitFor(mailpit)
     .WithHttpHealthCheck("/health");
 

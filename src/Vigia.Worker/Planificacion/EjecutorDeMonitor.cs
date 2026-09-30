@@ -6,8 +6,10 @@ using Microsoft.Extensions.Options;
 
 using Vigia.Comprobaciones;
 using Vigia.Datos.Persistencia;
+using Vigia.Dominio.Avisos;
 using Vigia.Dominio.Mantenimiento;
 using Vigia.Dominio.Seguimiento;
+using Vigia.Worker.Avisos;
 
 namespace Vigia.Worker.Planificacion;
 
@@ -25,6 +27,7 @@ public sealed class EjecutorDeMonitor(
     IServiceScopeFactory ambitos,
     EjecutorComprobaciones comprobaciones,
     IManejadorDeEventos manejador,
+    DestinosDeAviso destinos,
     MetricasVigia metricas,
     IOptions<OpcionesPlanificador> opciones,
     TimeProvider reloj,
@@ -57,7 +60,10 @@ public sealed class EjecutorDeMonitor(
                 new Observacion(resultado.Correcto, resultado.Latencia, resultado.Error, momento),
                 ReglasDeSeguimiento.De(monitor)));
 
-            await repositorio.GuardarAsync(seguimiento, eventos, Convertir(monitor, resultado, momento, enMantenimiento), cancellationToken);
+            // Los avisos se guardan con el cambio de estado que los provoca, en la misma transacción.
+            var avisos = PlanDeAvisos.Crear(eventos, destinos.Lista, momento);
+
+            await repositorio.GuardarAsync(seguimiento, eventos, Convertir(monitor, resultado, momento, enMantenimiento), avisos, cancellationToken);
 
             metricas.Comprobacion(monitor.Tipo.ToString(), resultado.Correcto, resultado.Latencia);
             Contar(eventos);
