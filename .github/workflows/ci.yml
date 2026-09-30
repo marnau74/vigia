@@ -38,6 +38,31 @@ jobs:
             echo "::endgroup::"
           done
 
+  despliegue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compose válido (con valores de relleno)
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          sed -i 's/^DOMINIO=.*/DOMINIO=localhost/; s/^PROPIETARIO=.*/PROPIETARIO=propietario/; s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=x/; s/^ACCESO_HASH=.*/ACCESO_HASH=x/; s/^ACCESO_CLAVE_JWT=.*/ACCESO_CLAVE_JWT=x/' .env
+          docker compose config --quiet
+      - name: Las imágenes se construyen
+        run: |
+          docker build --target api -t vigia-api .
+          docker build --target web -t vigia-web .
+          docker build --target worker -t vigia-worker .
+      - name: Scripts de shell
+        run: shellcheck deploy/*.sh
+      - name: Playbooks de Ansible
+        run: |
+          pip install --quiet ansible-core ansible-lint
+          ansible-galaxy collection install -r infra/ansible/requisitos.yml
+          cd infra/ansible
+          ansible-playbook --syntax-check -i localhost, preparar-servidor.yml
+          ansible-playbook --syntax-check -i localhost, desplegar.yml
+
   dependencias:
     runs-on: ubuntu-latest
     steps:

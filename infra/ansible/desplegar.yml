@@ -1,0 +1,62 @@
+---
+# Copia los ficheros de despliegue al servidor y arranca (o actualiza) Vigía. Es lo que hace el flujo de GitHub Actions en cada
+# versión, pero se puede lanzar a mano:
+#
+#   ansible-playbook -i inventario.ini desplegar.yml -e version=1.0.0
+#
+# Necesita que exista /opt/vigia/.env con los secretos (ver docs/despliegue.md): el playbook NO los gestiona, para que no pasen
+# nunca por el repositorio.
+- name: Desplegar Vigía
+  hosts: vigia
+  remote_user: vigia
+
+  vars:
+    directorio_aplicacion: /opt/vigia
+    version: latest
+
+  tasks:
+    - name: Comprobar que existe el fichero de secretos
+      ansible.builtin.stat:
+        path: "{{ directorio_aplicacion }}/.env"
+      register: fichero_env
+
+    - name: Avisar si falta
+      ansible.builtin.assert:
+        that: fichero_env.stat.exists
+        fail_msg: "Falta {{ directorio_aplicacion }}/.env: créalo a partir de deploy/.env.example (docs/despliegue.md, paso 4)."
+
+    - name: Copiar los ficheros de despliegue
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../deploy/{{ item.fichero }}"
+        dest: "{{ directorio_aplicacion }}/{{ item.fichero }}"
+        mode: "{{ item.modo }}"
+      loop:
+        - { fichero: docker-compose.yml, modo: "0640" }
+        - { fichero: Caddyfile, modo: "0640" }
+        - { fichero: backup.sh, modo: "0750" }
+        - { fichero: restaurar.sh, modo: "0750" }
+        - { fichero: probar-restauracion.sh, modo: "0750" }
+
+    - name: Fijar la versión a desplegar
+      ansible.builtin.lineinfile:
+        path: "{{ directorio_aplicacion }}/.env"
+        regexp: "^VERSION="
+        line: "VERSION={{ version }}"
+
+    - name: Bajar las imágenes y arrancar
+      ansible.builtin.shell:
+        cmd: docker compose pull && docker compose up -d --remove-orphans
+        chdir: "{{ directorio_aplicacion }}"
+      changed_when: true
+
+    - name: Esperar a que todo esté sano
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 40); do
+            if [ -z "$(docker compose ps --format '{{ '{{' }}.Health{{ '}}' }}' | grep -v healthy | grep -v '^$')" ]; then exit 0; fi
+            sleep 3
+          done
+          docker compose ps
+          exit 1
+        chdir: "{{ directorio_aplicacion }}"
+      changed_when: false

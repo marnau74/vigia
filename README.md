@@ -7,7 +7,7 @@ correo y Telegram. Tiene un panel en tiempo real y una página de estado públic
 > En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
 > comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
 > planificador del worker, los avisos por correo y Telegram, la API con tiempo real y el panel con la página
-> de estado pública. Falta la puesta en producción.
+> de estado pública y la puesta en producción en un VPS. Falta el cierre (capturas y versión 1.0).
 
 ## Cómo está pensado
 
@@ -163,6 +163,13 @@ Cada proyecto de `tests/` es un ejecutable:
 for proyecto in tests/*.Tests/; do dotnet run --project "$proyecto" || break; done
 ```
 
+## Producción
+
+Un VPS de unos euros al mes con Docker Compose: PostgreSQL, el worker, la API, la web y Caddy con HTTPS automático (también sin dominio propio).
+Solo Caddy se ve desde internet. Un playbook de Ansible prepara el servidor desde cero, hay copias de seguridad diarias verificadas con una
+restauración de prueba semanal, y cada versión se publica y se despliega desde GitHub Actions. Guía paso a paso en
+[docs/despliegue.md](docs/despliegue.md) y decisiones en el [ADR 0008](docs/adr/0008-produccion-con-compose.md).
+
 ## Estructura
 
 ```
@@ -171,10 +178,14 @@ src/
   Vigia.Comprobaciones/   HTTP, TLS, DNS, TCP e ICMP, y la protección contra SSRF
   Vigia.Datos/            EF Core y SQL de particiones y agregados
   Vigia.Worker/           planificador, ejecución, avisos, agregación y retención
-  Vigia.Api/              endpoints y tiempo real
+  Vigia.Api/              endpoints, acceso y tiempo real
+  Vigia.Web/              panel y página de estado (Blazor)
+  Vigia.Contratos/        los tipos que intercambian la API y la web
   Vigia.AppHost/          entorno local con .NET Aspire
-  Vigia.ServiceDefaults/  observabilidad, health checks y resiliencia
-tests/                    dominio, comprobaciones (con servidores reales en local), datos, worker y API
+  Vigia.ServiceDefaults/  observabilidad y health checks
+deploy/                   docker-compose, Caddy, copias de seguridad y restauración
+infra/ansible/            preparar el servidor y desplegar
+tests/                    dominio, comprobaciones (con servidores reales en local), datos, worker, API y web
                           (con PostgreSQL real en contenedor), arquitectura
 ```
 

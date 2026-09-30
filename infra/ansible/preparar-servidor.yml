@@ -1,0 +1,279 @@
+---
+# Deja un servidor Debian/Ubuntu recién creado listo para ejecutar Vigía:
+#   - actualizaciones de seguridad automáticas, cortafuegos (solo 22, 80 y 443) y fail2ban
+#   - SSH solo con clave y sin entrar como root
+#   - Docker y Docker Compose
+#   - un usuario sin privilegios (vigia) que ejecuta la aplicación
+#   - la copia de seguridad diaria y una comprobación semanal de que se puede restaurar
+#
+# Es idempotente: se puede ejecutar cuantas veces haga falta (y es la forma de reconstruir el servidor desde cero).
+#
+#   cd infra/ansible
+#   cp inventario.ejemplo.ini inventario.ini      # pon la IP de tu servidor
+#   ansible-playbook -i inventario.ini preparar-servidor.yml
+#
+# Después se despliega la aplicación con desplegar.yml (o, en cada versión, con el flujo de GitHub Actions).
+- name: Preparar el servidor de Vigía
+  hosts: vigia
+  become: true
+
+  vars:
+    usuario_aplicacion: vigia
+    directorio_aplicacion: /opt/vigia
+    directorio_copias: /var/backups/vigia
+    # Clave pública SSH con la que entrará el usuario de la aplicación (la que usa el flujo de despliegue). Obligatoria.
+    clave_publica_despliegue: "{{ lookup('ansible.builtin.env', 'VIGIA_CLAVE_PUBLICA') }}"
+    # Puerto SSH. Si lo cambias, cámbialo también en el inventario.
+    puerto_ssh: 22
+
+  pre_tasks:
+    - name: Comprobar que se ha dado la clave pública del despliegue
+      ansible.builtin.assert:
+        that:
+          - clave_publica_despliegue | length > 0
+        fail_msg: >-
+          Falta la clave pública SSH del despliegue. Genera un par (ssh-keygen -t ed25519 -f vigia_despliegue) y exporta
+          VIGIA_CLAVE_PUBLICA con el contenido del fichero .pub antes de ejecutar el playbook.
+
+  tasks:
+    # --- Paquetes y actualizaciones ------------------------------------------------------------------------------------
+    - name: Actualizar la lista de paquetes e instalar lo necesario
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+          - rsync
+        state: present
+
+    - name: Activar las actualizaciones automáticas de seguridad
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+
+    # --- Usuario sin privilegios -----------------------------------------------------------------------------------------
+    - name: Crear el usuario de la aplicación
+      ansible.builtin.user:
+        name: "{{ usuario_aplicacion }}"
+        shell: /bin/bash
+        create_home: true
+        password_lock: true
+
+    # Con root sin acceso por SSH, hace falta una vía de administración. Este usuario ya es equivalente a root por el grupo
+    # «docker», así que darle sudo sin contraseña no amplía lo que puede hacer quien tenga su clave; sí evita tener que abrir root.
+    - name: Permitir sudo al usuario de la aplicación (solo con su clave SSH)
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/vigia
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: "{{ usuario_aplicacion }} ALL=(ALL) NOPASSWD:ALL
+"
+
+    - name: Autorizar la clave de despliegue
+      ansible.posix.authorized_key:
+        user: "{{ usuario_aplicacion }}"
+        key: "{{ clave_publica_despliegue }}"
+        exclusive: true
+
+    # --- SSH: solo con clave, sin root ---------------------------------------------------------------------------------------
+    - name: Endurecer SSH
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-vigia.conf
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+        content: |
+          Port {{ puerto_ssh }}
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          X11Forwarding no
+          MaxAuthTries 3
+          LoginGraceTime 20
+      notify: Recargar SSH
+
+    # --- Cortafuegos -----------------------------------------------------------------------------------------------------------
+    - name: Política del cortafuegos por defecto
+      community.general.ufw:
+        default: "{{ item.direccion }}"
+        policy: "{{ item.politica }}"
+      loop:
+        - { direccion: incoming, politica: deny }
+        - { direccion: outgoing, politica: allow }
+
+    - name: Abrir solo SSH, HTTP y HTTPS
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.puerto }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - { puerto: "{{ puerto_ssh }}", proto: tcp }
+        - { puerto: "80", proto: tcp }
+        - { puerto: "443", proto: tcp }
+        - { puerto: "443", proto: udp }
+
+    - name: Activar el cortafuegos
+      community.general.ufw:
+        state: enabled
+
+    # --- fail2ban: bloquea a quien insiste con contraseñas o claves falsas --------------------------------------------------------
+    - name: Configurar fail2ban para SSH
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/vigia.local
+        mode: "0644"
+        content: |
+          [sshd]
+          enabled = true
+          port = {{ puerto_ssh }}
+          maxretry = 4
+          findtime = 10m
+          bantime = 1h
+      notify: Reiniciar fail2ban
+
+    # --- Docker ------------------------------------------------------------------------------------------------------------------------
+    - name: Añadir la clave y el repositorio oficial de Docker
+      ansible.builtin.deb822_repository:
+        name: docker
+        types: deb
+        uris: "https://download.docker.com/linux/{{ ansible_distribution | lower }}"
+        suites: "{{ ansible_distribution_release }}"
+        components: stable
+        signed_by: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+        architectures: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+        state: present
+
+    - name: Instalar Docker y Compose
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Docker arranca con el sistema
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+
+    # Estar en el grupo «docker» equivale a ser administrador del servidor: por eso este usuario no tiene contraseña,
+    # solo entra con la clave de despliegue y el cortafuegos solo deja pasar 22, 80 y 443.
+    - name: Permitir al usuario de la aplicación usar Docker
+      ansible.builtin.user:
+        name: "{{ usuario_aplicacion }}"
+        groups: docker
+        append: true
+
+    # --- Directorios ----------------------------------------------------------------------------------------------------------------------
+    - name: Crear el directorio de la aplicación
+      ansible.builtin.file:
+        path: "{{ directorio_aplicacion }}"
+        state: directory
+        owner: "{{ usuario_aplicacion }}"
+        group: "{{ usuario_aplicacion }}"
+        mode: "0750"
+
+    - name: Crear el directorio de las copias de seguridad
+      ansible.builtin.file:
+        path: "{{ directorio_copias }}"
+        state: directory
+        owner: "{{ usuario_aplicacion }}"
+        group: "{{ usuario_aplicacion }}"
+        mode: "0700"
+
+    # --- Copias de seguridad -------------------------------------------------------------------------------------------------------------------
+    - name: Servicio de la copia de seguridad
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vigia-copia.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Copia de seguridad de la base de datos de Vigía
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          User={{ usuario_aplicacion }}
+          WorkingDirectory={{ directorio_aplicacion }}
+          Environment=DIR_COPIAS={{ directorio_copias }}
+          ExecStart={{ directorio_aplicacion }}/backup.sh
+
+    - name: Temporizador de la copia de seguridad (cada noche)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vigia-copia.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Copia de seguridad diaria de Vigía
+
+          [Timer]
+          OnCalendar=*-*-* 03:15:00
+          RandomizedDelaySec=10min
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Servicio de la prueba de restauración
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vigia-prueba-restauracion.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Comprueba que la última copia de Vigía se puede restaurar
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          User={{ usuario_aplicacion }}
+          WorkingDirectory={{ directorio_aplicacion }}
+          Environment=DIR_COPIAS={{ directorio_copias }}
+          ExecStart={{ directorio_aplicacion }}/probar-restauracion.sh
+
+    - name: Temporizador de la prueba de restauración (cada domingo)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/vigia-prueba-restauracion.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prueba semanal de restauración de Vigía
+
+          [Timer]
+          OnCalendar=Sun *-*-* 04:30:00
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Activar los temporizadores
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      loop:
+        - vigia-copia.timer
+        - vigia-prueba-restauracion.timer
+
+  handlers:
+    - name: Recargar SSH
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+
+    - name: Reiniciar fail2ban
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        state: restarted

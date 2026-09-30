@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Options;
 
 using Shouldly;
@@ -343,6 +344,98 @@ public class SesionIntegracionTests : IntegracionTest
         }
 
         html.ShouldContain("Demasiados intentos seguidos");
+    }
+}
+
+public class ProduccionIntegracionTests : IntegracionTest
+{
+    [Fact]
+    public async Task Fuera_de_desarrollo_la_cookie_de_sesion_es_secure()
+    {
+        using var produccion = Entorno.Web.WithWebHostBuilder(constructor => constructor.UseEnvironment("Production"));
+        using var cliente = produccion.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = false, BaseAddress = new Uri("https://localhost") });
+
+        var galleta = await EntornoCompleto.EntrarAsync(cliente);
+
+        using var formulario = await cliente.GetAsync("/entrar", Cancelacion);
+        var token = EntornoCompleto.LeerToken(await formulario.Content.ReadAsStringAsync(Cancelacion))!;
+        using var peticion = new HttpRequestMessage(HttpMethod.Post, "/entrar")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["__RequestVerificationToken"] = token, ["Modelo.Contrasena"] = FabricaDeLaApi.Contrasena, ["_handler"] = "entrar" }),
+        };
+        peticion.Headers.Add("Cookie", EntornoCompleto.Galleta(formulario));
+        using var respuesta = await cliente.SendAsync(peticion, Cancelacion);
+
+        galleta.ShouldNotBeNullOrEmpty();
+        respuesta.Headers.GetValues("Set-Cookie").Single(c => c.StartsWith("vigia.sesion=", StringComparison.Ordinal)).ShouldContain("secure", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task Las_claves_de_cifrado_se_guardan_en_la_ruta_configurada_para_que_un_reinicio_no_cierre_las_sesiones()
+    {
+        var ruta = Path.Combine(Path.GetTempPath(), "vigia-claves-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            using var conClaves = Entorno.Web.WithWebHostBuilder(constructor => constructor.UseSetting("DataProtection:Ruta", ruta));
+            using var cliente = conClaves.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            // Pedir un formulario con protección antifalsificación obliga a crear la primera clave.
+            (await cliente.GetAsync("/entrar", Cancelacion)).EnsureSuccessStatusCode();
+
+            Directory.GetFiles(ruta, "key-*.xml").ShouldNotBeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(ruta))
+            {
+                Directory.Delete(ruta, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task La_web_dice_a_la_api_quien_llama_en_entrar_y_en_la_pagina_publica_pero_no_en_el_resto()
+    {
+        var capturadas = new List<(string Ruta, string? Reenviada)>();
+        var contexto = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        contexto.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("203.0.113.9");
+        var http = new HttpClient(new ManejadorQueAnota(capturadas)) { BaseAddress = new Uri("http://api.prueba/") };
+        var cliente = new ClienteDeApi(http, new EstadoDeAutenticacionFalso("token"), new ContextoFalso(contexto));
+
+        await cliente.AccederAsync("x", Cancelacion);
+        await cliente.EstadoPublicoAsync("produccion", Cancelacion);
+        await cliente.MonitoresAsync(Cancelacion);
+
+        capturadas[0].Reenviada.ShouldBe("203.0.113.9", "el límite de intentos de entrada es por cliente, no por la web");
+        capturadas[1].Reenviada.ShouldBe("203.0.113.9");
+        capturadas[2].Reenviada.ShouldBeNull("las llamadas con sesión no necesitan decir quién mira");
+    }
+
+    [Fact]
+    public async Task Sin_contexto_http_no_se_inventa_ninguna_direccion()
+    {
+        var capturadas = new List<(string Ruta, string? Reenviada)>();
+        var http = new HttpClient(new ManejadorQueAnota(capturadas)) { BaseAddress = new Uri("http://api.prueba/") };
+
+        await new ClienteDeApi(http, new EstadoDeAutenticacionFalso(null)).AccederAsync("x", Cancelacion);
+
+        capturadas.Single().Reenviada.ShouldBeNull();
+    }
+
+    private sealed class ContextoFalso(Microsoft.AspNetCore.Http.HttpContext contexto) : Microsoft.AspNetCore.Http.IHttpContextAccessor
+    {
+        public Microsoft.AspNetCore.Http.HttpContext? HttpContext { get; set; } = contexto;
+    }
+
+    private sealed class ManejadorQueAnota(List<(string Ruta, string? Reenviada)> capturadas) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            capturadas.Add((request.RequestUri!.AbsolutePath, request.Headers.TryGetValues("X-Forwarded-For", out var valores) ? valores.Single() : null));
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") });
+        }
     }
 }
 

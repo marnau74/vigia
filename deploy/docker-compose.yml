@@ -1,0 +1,119 @@
+# Vigía en producción: PostgreSQL, el worker, la API, la web y Caddy (HTTPS).
+#
+# Solo Caddy publica puertos (80 y 443). La base de datos, el worker y la API viven en una red interna a la que no llega
+# nadie de fuera: la web es el único servicio que habla con la API, y Caddy el único que habla con la web.
+#
+#   cp .env.example .env    # y rellénalo (ver docs/despliegue.md)
+#   docker compose pull && docker compose up -d
+
+name: vigia
+
+x-comun: &comun
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *comun
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: vigia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: vigia
+    volumes:
+      - datos:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vigia -d vigia"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [interna]
+
+  # El worker aplica las migraciones al arrancar y crea las particiones: la API y la web esperan a que esté sano.
+  worker:
+    <<: *comun
+    image: ghcr.io/${PROPIETARIO:?Falta PROPIETARIO en .env}/vigia-worker:${VERSION:-latest}
+    environment:
+      ConnectionStrings__vigia: Host=postgres;Port=5432;Database=vigia;Username=vigia;Password=${POSTGRES_PASSWORD}
+      Correo__Servidor: ${CORREO_SERVIDOR:-}
+      Correo__Puerto: ${CORREO_PUERTO:-587}
+      Correo__UsarTls: ${CORREO_USAR_TLS:-true}
+      Correo__Remitente: ${CORREO_REMITENTE:-vigia@localhost}
+      Correo__Usuario: ${CORREO_USUARIO:-}
+      Correo__Contrasena: ${CORREO_CONTRASENA:-}
+      Avisos__Destinatarios__0: ${AVISOS_CORREO_0:-}
+      Avisos__Destinatarios__1: ${AVISOS_CORREO_1:-}
+      Avisos__TokenTelegram: ${TELEGRAM_TOKEN:-}
+      Avisos__ChatsTelegram__0: ${TELEGRAM_CHAT_0:-}
+      Planificador__MigrarAlArrancar: "true"
+    # Para que los monitores de ping (ICMP) puedan abrir el socket sin ejecutarse como root.
+    cap_add: [NET_RAW]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [interna, salida]
+
+  api:
+    <<: *comun
+    image: ghcr.io/${PROPIETARIO}/vigia-api:${VERSION:-latest}
+    environment:
+      ConnectionStrings__vigia: Host=postgres;Port=5432;Database=vigia;Username=vigia;Password=${POSTGRES_PASSWORD}
+      Acceso__HashContrasena: ${ACCESO_HASH:?Falta ACCESO_HASH en .env (dotnet run --project src/Vigia.Api -- hash-contrasena)}
+      Acceso__ClaveJwt: ${ACCESO_CLAVE_JWT:?Falta ACCESO_CLAVE_JWT en .env (32 caracteres o más)}
+      # Detrás de Caddy (y de la web): se confía en X-Forwarded-For porque a la API solo llega la red interna.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    depends_on:
+      worker:
+        condition: service_healthy
+    networks: [interna, salida]
+
+  web:
+    <<: *comun
+    image: ghcr.io/${PROPIETARIO}/vigia-web:${VERSION:-latest}
+    environment:
+      Api__Url: http://api:8080/
+      DataProtection__Ruta: /claves
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    volumes:
+      - claves:/claves
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [interna]
+
+  caddy:
+    <<: *comun
+    image: caddy:2-alpine
+    ports:
+      - "${PUERTO_HTTP:-80}:80"
+      - "${PUERTO_HTTPS:-443}:443"
+      - "${PUERTO_HTTPS:-443}:443/udp"
+    environment:
+      DOMINIO: ${DOMINIO:?Falta DOMINIO en .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_datos:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [interna, salida]
+
+volumes:
+  datos:
+  claves:
+  caddy_datos:
+  caddy_config:
+
+networks:
+  # La red interna no tiene salida a internet: lo que no necesita salir (base de datos, web) no puede.
+  interna:
+    internal: true
+  # El worker (comprueba servicios), la API (probar ahora) y Caddy (certificados) sí salen.
+  salida: {}
