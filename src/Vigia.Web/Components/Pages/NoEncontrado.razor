@@ -1,0 +1,24 @@
+@page "/no-encontrado"
+@layout Layout.PublicoLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>No encontrado · Vigía</PageTitle>
+
+<section class="tarjeta entrada">
+    <h1>No encontrado</h1>
+    <p>La página que buscas no existe o no está disponible.</p>
+    <p><a href="/">Volver al inicio</a></p>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Contexto { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (Contexto is { Response.HasStarted: false })
+        {
+            Contexto.Response.StatusCode = StatusCodes.Status404NotFound;
+        }
+    }
+}

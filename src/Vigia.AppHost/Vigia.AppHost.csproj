@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vigia.Api\Vigia.Api.csproj" />
+    <ProjectReference Include="..\Vigia.Web\Vigia.Web.csproj" />
     <ProjectReference Include="..\Vigia.Worker\Vigia.Worker.csproj" />
   </ItemGroup>
 

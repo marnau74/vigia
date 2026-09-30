@@ -1,0 +1,26 @@
+@using System.Globalization
+
+<div class="leyenda" role="group" aria-label="Leyenda de las barras">
+    <span class="clave"><span class="muestra ok"></span> Sin incidentes</span>
+    <span class="clave"><span class="muestra aviso"></span> Lento</span>
+    <span class="clave">
+        <svg width="12" height="12" aria-hidden="true">
+            <defs>
+                <pattern id="@IdTrama" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                    <rect width="4" height="4" class="fondo-hachura" />
+                    <line x1="0" y1="0" x2="0" y2="4" class="trazo-hachura" />
+                </pattern>
+            </defs>
+            <rect width="12" height="12" rx="2" fill="url(#@IdTrama)" />
+        </svg>
+        Con caída
+    </span>
+    <span class="clave"><span class="muestra mantenimiento"></span> Mantenimiento</span>
+    <span class="clave"><span class="muestra desconocido"></span> Sin datos</span>
+</div>
+
+@code {
+    private static int _contador;
+
+    private readonly string IdTrama = "leyenda-hachura-" + Interlocked.Increment(ref _contador).ToString(CultureInfo.InvariantCulture);
+}

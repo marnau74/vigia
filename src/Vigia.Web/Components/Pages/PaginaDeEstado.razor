@@ -1,0 +1,111 @@
+@page "/estado/{Slug}"
+@layout Layout.PublicoLayout
+@attribute [AllowAnonymous]
+@inject IClienteDeApi Api
+
+@if (_pagina is null)
+{
+    <PageTitle>No encontrado · Vigía</PageTitle>
+
+    <section class="tarjeta entrada">
+        <h1>No encontrado</h1>
+        <p>@(_error ?? "Esta página de estado no existe o no es pública.")</p>
+    </section>
+}
+else
+{
+    <PageTitle>@_pagina.Grupo · Estado</PageTitle>
+    <HeadContent>
+        <meta http-equiv="refresh" content="60" />
+        <meta name="robots" content="noindex" />
+    </HeadContent>
+
+    <header class="encabezado-publico">
+        <h1>@_pagina.Grupo</h1>
+        <p class="resumen @Textos.Clase(Textos.Representante(_pagina.General))" role="status">
+            <InsigniaDeEstado Estado="Textos.Representante(_pagina.General)" SoloForma="true" />
+            <strong>@Textos.General(_pagina.General)</strong>
+        </p>
+        <p class="nota">Actualizado el @Formato.Fecha(_pagina.ActualizadoEn). Se refresca solo cada minuto.</p>
+    </header>
+
+    <section aria-labelledby="servicios">
+        <h2 id="servicios">Servicios</h2>
+
+        @if (_pagina.Servicios.Count == 0)
+        {
+            <p class="nota">Este grupo todavía no tiene servicios.</p>
+        }
+
+        @if (_pagina.Servicios.Count > 0)
+        {
+            <LeyendaDeBarras />
+        }
+
+        @foreach (var servicio in _pagina.Servicios)
+        {
+            <article class="servicio">
+                <div class="fila-servicio">
+                    <h3>@servicio.Nombre</h3>
+                    <InsigniaDeEstado Estado="servicio.Estado" />
+                </div>
+                <BarrasDeDisponibilidad Barras="servicio.Barras" MostrarLeyenda="false" />
+                <p class="nota">Disponibilidad en 90 días: <strong>@Formato.Porcentaje(servicio.Disponibilidad90Dias)</strong></p>
+            </article>
+        }
+    </section>
+
+    <section aria-labelledby="incidentes">
+        <h2 id="incidentes">Incidentes de los últimos 30 días</h2>
+
+        @if (_pagina.Incidentes.Count == 0)
+        {
+            <p class="nota">No ha habido incidentes.</p>
+        }
+        else
+        {
+            <ul class="lista-incidentes">
+                @foreach (var incidente in _pagina.Incidentes)
+                {
+                    <li>
+                        <strong>@incidente.Servicio</strong>
+                        <span>
+                            @if (incidente.CerradoEn is null)
+                            {
+                                <span class="etiqueta-estado caido">En curso</span>
+                                <span> desde el @Formato.Fecha(incidente.AbiertoEn)</span>
+                            }
+                            else
+                            {
+                                <span>@Formato.Fecha(incidente.AbiertoEn), duró @Formato.Duracion(incidente.DuracionSegundos)</span>
+                            }
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    [CascadingParameter]
+    private HttpContext? Contexto { get; set; }
+
+    private EstadoPublico? _pagina;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var respuesta = await Api.EstadoPublicoAsync(Slug);
+        _pagina = respuesta.EsExito ? respuesta.Valor : null;
+        _error = respuesta.Error is { Codigo: not "no_encontrado" } error ? error.Mensaje : null;
+
+        if (_pagina is null && Contexto is { Response.HasStarted: false })
+        {
+            Contexto.Response.StatusCode = respuesta.Error?.Codigo == "no_encontrado" ? StatusCodes.Status404NotFound : StatusCodes.Status503ServiceUnavailable;
+        }
+    }
+}

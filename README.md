@@ -6,7 +6,8 @@ correo y Telegram. Tiene un panel en tiempo real y una página de estado públic
 
 > En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
 > comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
-> planificador del worker, los avisos por correo y Telegram y la API con tiempo real. Falta el panel.
+> planificador del worker, los avisos por correo y Telegram, la API con tiempo real y el panel con la página
+> de estado pública. Falta la puesta en producción.
 
 ## Cómo está pensado
 
@@ -134,6 +135,19 @@ un monitor, y el worker a la API cuando guarda una comprobación). Las decisione
 en el [ADR 0006](docs/adr/0006-api-acceso-y-tiempo-real.md). Para entrar, el hash de la contraseña se genera
 con `dotnet run --project src/Vigia.Api -- hash-contrasena` y se da en `Acceso__HashContrasena`, junto con
 `Acceso__ClaveJwt` (32 caracteres o más); en el entorno local de Aspire la contraseña es `vigia-local`.
+
+## El panel y la página de estado
+
+Una aplicación Blazor con dos caras. **La página de estado** (`/estado/<grupo>`) es HTML dibujado en el servidor,
+sin JavaScript imprescindible: servicios con su estado en palabras, barras de disponibilidad de 90 días e
+incidentes recientes, sin direcciones ni mensajes de error. **El panel** (con sesión) lista los monitores con
+su estado, latencia y disponibilidad, se actualiza solo con cada comprobación y permite crear, editar, pausar,
+probar y borrar monitores, y programar mantenimientos.
+
+Decisiones que se notan: el estado nunca se indica solo con color (siempre palabra y forma; las caídas llevan
+trama); las gráficas son SVG propio con su descripción y una tabla con los mismos datos; un hueco en los datos
+corta la línea en lugar de inventarse un valor; y el panel no toca la base de datos, solo habla con la API.
+Todo en el [ADR 0007](docs/adr/0007-panel-blazor.md).
 
 ## Cómo ejecutarlo
 

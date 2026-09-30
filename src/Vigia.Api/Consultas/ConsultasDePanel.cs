@@ -2,7 +2,7 @@ using System.Text.Json;
 
 using Microsoft.EntityFrameworkCore;
 
-using Vigia.Api.Contratos;
+using Vigia.Contratos;
 using Vigia.Datos.Persistencia;
 using Vigia.Dominio.Disponibilidad;
 using Vigia.Dominio.Monitores;

@@ -1,0 +1,41 @@
+<span class="insignia @Textos.Clase(Estado)">
+    <svg class="forma" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+        @switch (Estado)
+        {
+            case EstadoMonitor.Operativo:
+                <circle cx="8" cy="8" r="7" fill="currentColor" />
+                <path d="M4.5 8.3l2.4 2.4 4.6-5" fill="none" stroke="var(--fondo-insignia)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                break;
+            case EstadoMonitor.Degradado:
+            case EstadoMonitor.Sospechoso:
+                <path d="M8 1.5l7 12.5H1z" fill="currentColor" />
+                <path d="M8 6v4M8 11.6v.4" stroke="var(--fondo-insignia)" stroke-width="1.6" stroke-linecap="round" />
+                break;
+            case EstadoMonitor.Caido:
+                <rect x="1" y="1" width="14" height="14" rx="2" fill="currentColor" />
+                <path d="M5 5l6 6M11 5l-6 6" stroke="var(--fondo-insignia)" stroke-width="1.8" stroke-linecap="round" />
+                break;
+            case EstadoMonitor.Mantenimiento:
+                <circle cx="8" cy="8" r="7" fill="currentColor" />
+                <path d="M6 5v6M10 5v6" stroke="var(--fondo-insignia)" stroke-width="1.8" stroke-linecap="round" />
+                break;
+            default:
+                <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                <path d="M5.5 8h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                break;
+        }
+    </svg>
+    @if (!SoloForma)
+    {
+        <span>@Textos.Estado(Estado)</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public EstadoMonitor Estado { get; set; }
+
+    /// <summary>Solo el icono, cuando la palabra ya está escrita al lado (el estado general de la página pública).</summary>
+    [Parameter]
+    public bool SoloForma { get; set; }
+}

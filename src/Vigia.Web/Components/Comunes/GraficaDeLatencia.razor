@@ -1,0 +1,185 @@
+@using System.Globalization
+
+<figure class="grafica">
+    @if (Puntos.Count == 0 || !HayDatos)
+    {
+        <p class="sin-datos">Todavía no hay datos de latencia en este periodo.</p>
+    }
+    else
+    {
+        <svg viewBox="0 0 @Ancho @Alto" class="svg-grafica" role="img" aria-labelledby="@IdTitulo @IdDescripcion" focusable="false">
+            <title id="@IdTitulo">Latencia por hora</title>
+            <desc id="@IdDescripcion">@Resumen</desc>
+
+            @foreach (var marca in MarcasY)
+            {
+                <line x1="@MargenIzq" x2="@(Ancho - MargenDer)" y1="@Num(Y(marca))" y2="@Num(Y(marca))" class="rejilla" />
+                @Texto(MargenIzq - 6, Y(marca) + 4, "end", Formato.Latencia(marca))
+            }
+
+            @foreach (var (indice, etiqueta) in MarcasX)
+            {
+                @Texto(X(indice), Alto - 8, "middle", etiqueta)
+            }
+
+            @foreach (var tramo in Tramos(p => p.P95Ms))
+            {
+                <polyline points="@tramo" class="linea-p95" fill="none" />
+            }
+
+            @foreach (var tramo in Tramos(p => p.P50Ms))
+            {
+                <polyline points="@tramo" class="linea-p50" fill="none" />
+            }
+
+            @for (var i = 0; i < Puntos.Count; i++)
+            {
+                if (Puntos[i].Fallidas > 0)
+                {
+                    <path d="@Cruz(X(i), Alto - MargenInf + 10)" class="marca-fallo">
+                        <title>@Formato.Hora(Puntos[i].Hora) — @Puntos[i].Fallidas fallos</title>
+                    </path>
+                }
+            }
+        </svg>
+
+        <figcaption class="leyenda">
+            <span class="clave"><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" class="linea-p50" /></svg> Mediana (p50)</span>
+            <span class="clave"><svg width="28" height="8" aria-hidden="true"><line x1="0" y1="4" x2="28" y2="4" class="linea-p95" /></svg> Percentil 95 (p95)</span>
+            <span class="clave"><svg width="10" height="10" aria-hidden="true"><path d="@Cruz(5, 5)" class="marca-fallo" /></svg> Hora con fallos</span>
+        </figcaption>
+
+        <details class="datos">
+            <summary>Ver los datos en una tabla</summary>
+            <table>
+                <caption class="oculto">Latencia por hora</caption>
+                <thead>
+                    <tr><th scope="col">Hora (UTC)</th><th scope="col">p50</th><th scope="col">p95</th><th scope="col">Media</th><th scope="col">Fallos</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var punto in Puntos)
+                    {
+                        <tr>
+                            <th scope="row">@Formato.Fecha(punto.Hora)</th>
+                            <td>@Formato.Latencia(punto.P50Ms)</td>
+                            <td>@Formato.Latencia(punto.P95Ms)</td>
+                            <td>@Formato.Latencia(punto.MediaMs)</td>
+                            <td>@punto.Fallidas</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+    }
+</figure>
+
+@code {
+    private const int Ancho = 720;
+    private const int Alto = 250;
+    private const int MargenIzq = 56;
+    private const int MargenDer = 12;
+    private const int MargenSup = 12;
+    private const int MargenInf = 36;
+
+    private static int _contador;
+
+    private readonly string _id = "grafica-" + Interlocked.Increment(ref _contador).ToString(CultureInfo.InvariantCulture);
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<PuntoDeLatencia> Puntos { get; set; } = [];
+
+    private string IdTitulo => _id + "-titulo";
+
+    private string IdDescripcion => _id + "-desc";
+
+    private bool HayDatos => Puntos.Any(p => p.P50Ms.HasValue || p.P95Ms.HasValue);
+
+    private double Maximo { get; set; } = 1;
+
+    private string Resumen { get; set; } = string.Empty;
+
+    private List<double> MarcasY { get; set; } = [];
+
+    private List<(int Indice, string Etiqueta)> MarcasX { get; set; } = [];
+
+    protected override void OnParametersSet()
+    {
+        var valores = Puntos.SelectMany(p => new[] { p.P95Ms, p.P50Ms }).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+
+        if (valores.Count == 0)
+        {
+            return;
+        }
+
+        Maximo = Redondear(valores.Max());
+        MarcasY = [0, Maximo / 2, Maximo];
+
+        var ultimo = Puntos.Count - 1;
+        MarcasX = ultimo == 0 ? [(0, Formato.Hora(Puntos[0].Hora))] : [(0, Formato.Hora(Puntos[0].Hora)), (ultimo / 2, Formato.Hora(Puntos[ultimo / 2].Hora)), (ultimo, Formato.Hora(Puntos[ultimo].Hora))];
+
+        var p95 = Puntos.Where(p => p.P95Ms.HasValue).Select(p => p.P95Ms!.Value).ToList();
+        var p50 = Puntos.Where(p => p.P50Ms.HasValue).Select(p => p.P50Ms!.Value).ToList();
+        Resumen = $"Mediana entre {Formato.Latencia(p50.DefaultIfEmpty().Min())} y {Formato.Latencia(p50.DefaultIfEmpty().Max())}; "
+            + $"percentil 95 entre {Formato.Latencia(p95.DefaultIfEmpty().Min())} y {Formato.Latencia(p95.DefaultIfEmpty().Max())}; "
+            + $"{Puntos.Count(p => p.Fallidas > 0)} horas con fallos de {Puntos.Count}.";
+    }
+
+    /// <summary>Un máximo «redondo» para que las marcas del eje se lean bien (100, 250, 500, 1000 ms…).</summary>
+    private static double Redondear(double valor)
+    {
+        double[] pasos = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000];
+
+        return pasos.FirstOrDefault(p => p >= valor, Math.Ceiling(valor / 1000) * 1000);
+    }
+
+    private double X(int indice) => MargenIzq + (Puntos.Count <= 1 ? (Ancho - MargenIzq - MargenDer) / 2.0 : indice * (Ancho - MargenIzq - MargenDer) / (Puntos.Count - 1.0));
+
+    private double Y(double valor) => Alto - MargenInf - (valor / Maximo * (Alto - MargenInf - MargenSup));
+
+    /// <summary>Las líneas como tramos continuos: un hueco en los datos corta la línea en lugar de unir lo que no se midió.</summary>
+    private List<string> Tramos(Func<PuntoDeLatencia, double?> serie)
+    {
+        var tramos = new List<string>();
+        var actual = new List<string>();
+
+        void Cerrar()
+        {
+            if (actual.Count >= 2)
+            {
+                tramos.Add(string.Join(' ', actual));
+            }
+            else if (actual.Count == 1)
+            {
+                // Un punto suelto se dibuja como una línea mínima para que se vea.
+                tramos.Add(actual[0] + " " + actual[0]);
+            }
+
+            actual = [];
+        }
+
+        for (var i = 0; i < Puntos.Count; i++)
+        {
+            if (serie(Puntos[i]) is { } valor)
+            {
+                actual.Add($"{Num(X(i))},{Num(Y(valor))}");
+            }
+            else
+            {
+                Cerrar();
+            }
+        }
+
+        Cerrar();
+
+        return tramos;
+    }
+
+    private static string Cruz(double x, double y) =>
+        string.Create(CultureInfo.InvariantCulture, $"M{x - 4:0.#},{y - 4:0.#}l8,8M{x + 4:0.#},{y - 4:0.#}l-8,8");
+
+    /// <summary>Un texto SVG. Razor reserva la etiqueta «text», así que se escribe como marcado (con el contenido escapado).</summary>
+    private static MarkupString Texto(double x, double y, string ancla, string contenido) =>
+        new($"<text x=\"{Num(x)}\" y=\"{Num(y)}\" text-anchor=\"{ancla}\" class=\"etiqueta\">{System.Net.WebUtility.HtmlEncode(contenido)}</text>");
+
+    private static string Num(double valor) => valor.ToString("0.#", CultureInfo.InvariantCulture);
+}

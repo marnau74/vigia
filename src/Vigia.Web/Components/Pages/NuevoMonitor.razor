@@ -1,0 +1,45 @@
+@page "/monitores/nuevo"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+
+<PageTitle>Nuevo monitor · Vigía</PageTitle>
+
+<p class="migas"><a href="/">← Panel</a></p>
+<h1>Nuevo monitor</h1>
+
+<FormularioDeMonitor Modelo="_modelo" Grupos="_grupos" TextoGuardar="Crear monitor" Error="@_error" Guardando="_guardando" AlGuardar="GuardarAsync" />
+
+@code {
+    private readonly ModeloDeMonitor _modelo = new();
+    private IReadOnlyList<GrupoDto> _grupos = [];
+    private string? _error;
+    private bool _guardando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var grupos = await Api.GruposAsync();
+
+        if (Correcta(grupos, out _))
+        {
+            _grupos = grupos.Valor!;
+        }
+    }
+
+    private async Task GuardarAsync(CuerpoMonitor cuerpo)
+    {
+        _guardando = true;
+        _error = null;
+        var respuesta = await Api.CrearMonitorAsync(cuerpo);
+        _guardando = false;
+
+        if (Correcta(respuesta, out var error))
+        {
+            Navegacion.NavigateTo($"/monitores/{respuesta.Valor!.Id}");
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+}

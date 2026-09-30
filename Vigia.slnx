@@ -3,9 +3,11 @@
     <Project Path="src/Vigia.Api/Vigia.Api.csproj" />
     <Project Path="src/Vigia.AppHost/Vigia.AppHost.csproj" />
     <Project Path="src/Vigia.Comprobaciones/Vigia.Comprobaciones.csproj" />
+    <Project Path="src/Vigia.Contratos/Vigia.Contratos.csproj" />
     <Project Path="src/Vigia.Datos/Vigia.Datos.csproj" />
     <Project Path="src/Vigia.Dominio/Vigia.Dominio.csproj" />
     <Project Path="src/Vigia.ServiceDefaults/Vigia.ServiceDefaults.csproj" />
+    <Project Path="src/Vigia.Web/Vigia.Web.csproj" />
     <Project Path="src/Vigia.Worker/Vigia.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -15,6 +17,7 @@
     <Project Path="tests/Vigia.Datos.Tests/Vigia.Datos.Tests.csproj" />
     <Project Path="tests/Vigia.Dominio.Tests/Vigia.Dominio.Tests.csproj" />
     <Project Path="tests/Vigia.Tests.Comunes/Vigia.Tests.Comunes.csproj" />
+    <Project Path="tests/Vigia.Web.Tests/Vigia.Web.Tests.csproj" />
     <Project Path="tests/Vigia.Worker.Tests/Vigia.Worker.Tests.csproj" />
   </Folder>
 </Solution>

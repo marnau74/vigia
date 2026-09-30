@@ -1,0 +1,216 @@
+@inject IClienteDeApi Api
+
+<EditForm Model="Modelo" OnValidSubmit="GuardarAsync" FormName="monitor" class="formulario">
+    <DataAnnotationsValidator />
+
+    @if (Error is not null)
+    {
+        <p class="error" role="alert">@Error</p>
+    }
+
+    <fieldset>
+        <legend>General</legend>
+
+        <div class="campo">
+            <label for="nombre">Nombre</label>
+            <InputText id="nombre" @bind-Value="Modelo.Nombre" maxlength="100" required />
+        </div>
+
+        <div class="campo">
+            <label for="tipo">Qué vigilar</label>
+            <InputSelect id="tipo" @bind-Value="Modelo.Tipo" disabled="@TipoFijo">
+                @foreach (var tipo in ModeloDeMonitor.Tipos)
+                {
+                    <option value="@tipo">@Textos.Tipo(tipo)</option>
+                }
+            </InputSelect>
+            @if (TipoFijo)
+            {
+                <p class="ayuda">El tipo no se puede cambiar: el histórico es de un tipo concreto. Crea un monitor nuevo si necesitas otro.</p>
+            }
+        </div>
+
+        @switch (Modelo.Tipo)
+        {
+            case "Http":
+                <div class="campo">
+                    <label for="url">Dirección</label>
+                    <InputText id="url" @bind-Value="Modelo.Url" type="url" inputmode="url" required />
+                </div>
+                <div class="campo">
+                    <label for="palabra">Palabra clave (opcional)</label>
+                    <InputText id="palabra" @bind-Value="Modelo.PalabraClave" aria-describedby="ayuda-palabra" />
+                    <p id="ayuda-palabra" class="ayuda">Si se indica, la respuesta debe contenerla. Sirve para detectar páginas que responden 200 pero están rotas.</p>
+                </div>
+                <div class="campo">
+                    <label for="codigos">Códigos de respuesta aceptados</label>
+                    <InputText id="codigos" @bind-Value="Modelo.CodigosEsperados" aria-describedby="ayuda-codigos" />
+                    <p id="ayuda-codigos" class="ayuda">Por ejemplo <code>200</code>, <code>200-299</code> o <code>200,301,404</code>.</p>
+                </div>
+                <div class="campo casilla">
+                    <InputCheckbox id="cert-http" @bind-Value="Modelo.VerificarCertificado" />
+                    <label for="cert-http">Verificar el certificado HTTPS</label>
+                </div>
+                break;
+            case "Tls":
+                <div class="campo">
+                    <label for="host-tls">Servidor</label>
+                    <InputText id="host-tls" @bind-Value="Modelo.Host" required />
+                </div>
+                <div class="campo">
+                    <label for="puerto-tls">Puerto</label>
+                    <InputNumber id="puerto-tls" @bind-Value="Modelo.Puerto" min="1" max="65535" />
+                </div>
+                break;
+            case "Dns":
+                <div class="campo">
+                    <label for="nombre-dns">Nombre</label>
+                    <InputText id="nombre-dns" @bind-Value="Modelo.NombreDns" required />
+                </div>
+                <div class="campo">
+                    <label for="registro">Tipo de registro</label>
+                    <InputSelect id="registro" @bind-Value="Modelo.RegistroDns">
+                        @foreach (var registro in ModeloDeMonitor.RegistrosDns)
+                        {
+                            <option value="@registro">@registro.ToUpperInvariant()</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="campo">
+                    <label for="esperados">Valores esperados (opcional)</label>
+                    <InputText id="esperados" @bind-Value="Modelo.EsperadosDns" aria-describedby="ayuda-esperados" />
+                    <p id="ayuda-esperados" class="ayuda">Separados por comas. Si se indican, la respuesta debe coincidir.</p>
+                </div>
+                <div class="campo">
+                    <label for="servidor-dns">Servidor DNS (opcional)</label>
+                    <InputText id="servidor-dns" @bind-Value="Modelo.ServidorDns" />
+                </div>
+                break;
+            case "Tcp":
+                <div class="campo">
+                    <label for="host-tcp">Servidor</label>
+                    <InputText id="host-tcp" @bind-Value="Modelo.Host" required />
+                </div>
+                <div class="campo">
+                    <label for="puerto-tcp">Puerto</label>
+                    <InputNumber id="puerto-tcp" @bind-Value="Modelo.Puerto" min="1" max="65535" />
+                </div>
+                break;
+            default:
+                <div class="campo">
+                    <label for="host-icmp">Servidor</label>
+                    <InputText id="host-icmp" @bind-Value="Modelo.Host" required />
+                </div>
+                break;
+        }
+    </fieldset>
+
+    <fieldset>
+        <legend>Cuándo y cuánto</legend>
+
+        <div class="campo">
+            <label for="intervalo">Comprobar cada (segundos)</label>
+            <InputNumber id="intervalo" @bind-Value="Modelo.IntervaloSegundos" min="30" max="86400" aria-describedby="ayuda-intervalo" />
+            <p id="ayuda-intervalo" class="ayuda">Mínimo 30 segundos.</p>
+        </div>
+        <div class="campo">
+            <label for="tiempo-maximo">Tiempo máximo de espera (segundos)</label>
+            <InputNumber id="tiempo-maximo" @bind-Value="Modelo.TiempoMaximoSegundos" min="1" max="60" aria-describedby="ayuda-tiempo" />
+            <p id="ayuda-tiempo" class="ayuda">Pasado este tiempo la comprobación cuenta como fallo. Debe ser menor que el intervalo.</p>
+        </div>
+        <div class="campo">
+            <label for="fallos">Fallos seguidos para dar el servicio por caído</label>
+            <InputNumber id="fallos" @bind-Value="Modelo.FallosParaIncidente" min="1" max="10" aria-describedby="ayuda-fallos" />
+            <p id="ayuda-fallos" class="ayuda">Un fallo aislado no avisa a nadie: hacen falta estos seguidos para abrir un incidente.</p>
+        </div>
+        <div class="campo">
+            <label for="umbral">Marcar como lento si tarda más de (ms, opcional)</label>
+            <InputNumber id="umbral" @bind-Value="Modelo.UmbralLentoMs" min="1" />
+        </div>
+        <div class="campo">
+            <label for="grupo">Grupo (opcional)</label>
+            <InputSelect id="grupo" @bind-Value="Modelo.GrupoId">
+                <option value="">Sin grupo</option>
+                @foreach (var grupo in Grupos)
+                {
+                    <option value="@grupo.Id">@grupo.Nombre</option>
+                }
+            </InputSelect>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>Avanzado</legend>
+        <div class="campo casilla">
+            <InputCheckbox id="red-privada" @bind-Value="Modelo.PermitirRedPrivada" aria-describedby="ayuda-red" />
+            <label for="red-privada">Permitir direcciones de la red privada</label>
+        </div>
+        <p id="ayuda-red" class="ayuda advertencia">Por seguridad, Vigía no se conecta a direcciones internas (<code>10.x</code>, <code>192.168.x</code>, <code>localhost</code>…). Actívalo solo para vigilar equipos de tu propia red.</p>
+    </fieldset>
+
+    <div class="acciones fila">
+        <button type="submit" class="boton principal" disabled="@Guardando">@(Guardando ? "Guardando…" : TextoGuardar)</button>
+        <button type="button" class="boton" @onclick="ProbarAsync" disabled="@_probando">@(_probando ? "Probando…" : "Probar ahora")</button>
+        <a class="boton" href="@Cancelar">Cancelar</a>
+    </div>
+
+    <div aria-live="polite">
+        @if (_prueba is not null)
+        {
+            <section class="tarjeta">
+                <h2>Resultado de la prueba</h2>
+                @if (_prueba.Correcto)
+                {
+                    <p><span class="etiqueta-estado ok">Correcta</span> en @Formato.Latencia(_prueba.LatenciaMs).</p>
+                }
+                else
+                {
+                    <p><span class="etiqueta-estado caido">Fallida</span> (@_prueba.Fallo): @_prueba.Error</p>
+                }
+            </section>
+        }
+    </div>
+</EditForm>
+
+@code {
+    private bool _probando;
+    private PruebaDto? _prueba;
+
+    [Parameter, EditorRequired]
+    public ModeloDeMonitor Modelo { get; set; } = new();
+
+    [Parameter]
+    public IReadOnlyList<GrupoDto> Grupos { get; set; } = [];
+
+    [Parameter]
+    public bool TipoFijo { get; set; }
+
+    [Parameter]
+    public string TextoGuardar { get; set; } = "Guardar";
+
+    [Parameter]
+    public string Cancelar { get; set; } = "/";
+
+    [Parameter]
+    public string? Error { get; set; }
+
+    [Parameter]
+    public bool Guardando { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<CuerpoMonitor> AlGuardar { get; set; }
+
+    private Task GuardarAsync() => AlGuardar.InvokeAsync(Modelo.Cuerpo());
+
+    private async Task ProbarAsync()
+    {
+        _probando = true;
+        _prueba = null;
+        var respuesta = await Api.ProbarAsync(Modelo.Configuracion());
+        _probando = false;
+
+        _prueba = respuesta.EsExito
+            ? respuesta.Valor
+            : new PruebaDto(false, 0, "Otro", respuesta.Error?.Mensaje ?? "No se pudo hacer la prueba.", new Dictionary<string, string>());
+    }
+}

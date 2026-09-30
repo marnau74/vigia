@@ -1,0 +1,76 @@
+@using System.Globalization
+
+@if (Segmentos.Count == 0)
+{
+    <span class="sin-datos" aria-label="Sin datos de latencia">—</span>
+}
+else
+{
+    <svg class="mini" viewBox="0 0 @Ancho @Alto" width="@Ancho" height="@Alto" role="img" aria-label="@Descripcion" focusable="false">
+        <title>@Descripcion</title>
+        @foreach (var segmento in Segmentos)
+        {
+            if (segmento.Count == 1)
+            {
+                <circle cx="@Num(segmento[0].X)" cy="@Num(segmento[0].Y)" r="1.6" class="linea-punto" />
+            }
+            else
+            {
+                <polyline points="@string.Join(' ', segmento.Select(p => $"{Num(p.X)},{Num(p.Y)}"))" class="linea-mini" fill="none" />
+            }
+        }
+    </svg>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<double?> Valores { get; set; } = [];
+
+    [Parameter]
+    public int Ancho { get; set; } = 110;
+
+    [Parameter]
+    public int Alto { get; set; } = 26;
+
+    private List<List<(double X, double Y)>> Segmentos { get; set; } = [];
+
+    private string Descripcion { get; set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        Segmentos = [];
+        var conocidos = Valores.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+
+        if (conocidos.Count == 0)
+        {
+            return;
+        }
+
+        var minimo = conocidos.Min();
+        var maximo = conocidos.Max();
+        var rango = Math.Max(maximo - minimo, 1);
+        var paso = Valores.Count > 1 ? (Ancho - 4.0) / (Valores.Count - 1) : 0;
+        List<(double, double)>? actual = null;
+
+        for (var i = 0; i < Valores.Count; i++)
+        {
+            if (Valores[i] is not { } valor)
+            {
+                actual = null; // Un hueco corta la línea: no se inventa lo que no se midió.
+                continue;
+            }
+
+            if (actual is null)
+            {
+                actual = [];
+                Segmentos.Add(actual);
+            }
+
+            actual.Add((2 + (i * paso), Alto - 3 - ((valor - minimo) / rango * (Alto - 6))));
+        }
+
+        Descripcion = $"Latencia de las últimas 24 horas: de {Formato.Latencia(minimo)} a {Formato.Latencia(maximo)}";
+    }
+
+    private static string Num(double valor) => valor.ToString("0.#", CultureInfo.InvariantCulture);
+}

@@ -2,7 +2,7 @@ using System.Text.Json;
 
 using Vigia.Dominio.Monitores;
 
-namespace Vigia.Api.Contratos;
+namespace Vigia.Contratos;
 
 // Lo que entra y sale por la API. Son tipos propios y no las clases del dominio: el dominio puede cambiar por
 // dentro sin romper a quien consume la API, y la API no expone nada que no haya decidido enseñar.
@@ -116,3 +116,7 @@ public static class EstadoGeneralDe
         return conocidos.Any(e => e == EstadoMonitor.Mantenimiento) ? EstadoGeneral.Mantenimiento : EstadoGeneral.Operativo;
     }
 }
+
+/// <summary>El mensaje que el hub de tiempo real envía al panel cada vez que el worker guarda una comprobación.</summary>
+/// <param name="Incidente">«abierto» o «cerrado» si la comprobación abrió o cerró un incidente; vacío si no.</param>
+public sealed record ComprobacionEnVivo(Guid MonitorId, DateTimeOffset Momento, bool Correcto, int LatenciaMs, EstadoMonitor Estado, string? Incidente);

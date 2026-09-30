@@ -1,0 +1,10 @@
+@inject NavigationManager Navegacion
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Solo se vuelve a una ruta de esta misma web: nunca a lo que venga de fuera.
+        var destino = "/" + Navegacion.ToBaseRelativePath(Navegacion.Uri);
+        Navegacion.NavigateTo($"/entrar?volver={Uri.EscapeDataString(destino)}", forceLoad: true);
+    }
+}

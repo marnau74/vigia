@@ -1,0 +1,83 @@
+@using System.Globalization
+
+<figure class="barras">
+    <svg viewBox="0 0 @Ancho 36" class="svg-barras" preserveAspectRatio="none" role="img" aria-label="@Descripcion" focusable="false">
+        <defs>
+            <pattern id="@IdTrama" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="4" height="4" class="fondo-hachura" />
+                <line x1="0" y1="0" x2="0" y2="4" class="trazo-hachura" />
+            </pattern>
+        </defs>
+        @for (var i = 0; i < Barras.Count; i++)
+        {
+            var barra = Barras[i];
+
+            <rect x="@(i * Paso)" y="0" width="@AnchoBarra" height="36" rx="1" class="@ClaseDe(barra)" fill="@RellenoDe(barra)">
+                <title>@Texto(barra)</title>
+            </rect>
+        }
+    </svg>
+
+    <div class="extremos" aria-hidden="true">
+        <span>hace @Barras.Count días</span>
+        <span>hoy</span>
+    </div>
+
+    @if (MostrarLeyenda)
+    {
+        <LeyendaDeBarras />
+    }
+</figure>
+
+@code {
+    private static int _contador;
+
+    private readonly string IdTrama = "hachura-" + Interlocked.Increment(ref _contador).ToString(CultureInfo.InvariantCulture);
+
+    private const int AnchoBarra = 6;
+    private const int Paso = 8;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<BarraDiaria> Barras { get; set; } = [];
+
+    /// <summary>La leyenda se puede quitar cuando hay varias barras seguidas y se enseña una sola vez debajo.</summary>
+    [Parameter]
+    public bool MostrarLeyenda { get; set; } = true;
+
+    private int Ancho => Math.Max(Barras.Count * Paso, 1);
+
+    private string Descripcion { get; set; } = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        var conCaida = Barras.Count(b => b.PeorEstado == EstadoMonitor.Caido);
+        var sinDatos = Barras.Count(b => b.PeorEstado is null);
+        var bien = Barras.Count - conCaida - sinDatos;
+
+        Descripcion = $"Disponibilidad diaria de los últimos {Barras.Count} días: {bien} días sin caídas, {conCaida} con caídas y {sinDatos} sin datos.";
+    }
+
+    private static string ClaseDe(BarraDiaria barra) => barra.PeorEstado switch
+    {
+        EstadoMonitor.Operativo => "ok",
+        EstadoMonitor.Degradado => "aviso",
+        EstadoMonitor.Caido => "caido",
+        EstadoMonitor.Mantenimiento => "mantenimiento",
+        _ => "desconocido",
+    };
+
+    // Las caídas llevan trama además de color: el color solo no debe ser lo único que las distinga.
+    private string? RellenoDe(BarraDiaria barra) => barra.PeorEstado == EstadoMonitor.Caido ? $"url(#{IdTrama})" : null;
+
+    private static string Texto(BarraDiaria barra)
+    {
+        if (barra.PeorEstado is null)
+        {
+            return $"{Formato.Dia(barra.Dia)}: sin datos";
+        }
+
+        var caido = barra.SegundosCaido > 0 ? $", caído {Formato.Duracion(barra.SegundosCaido)}" : string.Empty;
+
+        return $"{Formato.Dia(barra.Dia)}: {Formato.Porcentaje(barra.Disponibilidad)}{caido}";
+    }
+}
