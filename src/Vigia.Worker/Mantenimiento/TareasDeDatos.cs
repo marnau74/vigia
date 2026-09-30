@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using Vigia.Datos.Persistencia;
+using Vigia.Worker.Avisos;
 using Vigia.Worker.Planificacion;
 
 namespace Vigia.Worker.Mantenimiento;
@@ -42,6 +43,7 @@ public sealed class PreparacionDeBaseDeDatos(
 public sealed class TareasDeDatos(
     IServiceScopeFactory ambitos,
     IOptions<OpcionesPlanificador> opciones,
+    IOptions<OpcionesDeAvisos> avisos,
     TimeProvider reloj,
     ILogger<TareasDeDatos> log) : BackgroundService
 {
@@ -90,8 +92,10 @@ public sealed class TareasDeDatos(
             await particiones.AsegurarAsync(ahora, cancellationToken);
             var eliminadas = await particiones.AplicarRetencionAsync(ahora - opciones.Value.RetencionResultados, cancellationToken);
             var horasBorradas = await new Agregador(db).PurgarHorasAntiguasAsync(ahora, cancellationToken);
+            var avisosBorrados = await new RepositorioAvisos(db).PurgarAsync(ahora - avisos.Value.Retencion, cancellationToken);
 
             log.RetencionAplicada(eliminadas.Count, horasBorradas);
+            log.AvisosPurgados(avisosBorrados);
             _ultimoDiaDeLimpieza = hoy;
         }
     }

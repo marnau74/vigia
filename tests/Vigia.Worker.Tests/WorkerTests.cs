@@ -11,10 +11,12 @@ using Shouldly;
 
 using Vigia.Comprobaciones;
 using Vigia.Datos.Persistencia;
+using Vigia.Dominio.Avisos;
 using Vigia.Dominio.Mantenimiento;
 using Vigia.Dominio.Monitores;
 using Vigia.Dominio.Seguimiento;
 using Vigia.Tests.Comunes;
+using Vigia.Worker.Avisos;
 using Vigia.Worker.Planificacion;
 
 using MonitorDeDominio = Vigia.Dominio.Monitores.Monitor;
@@ -70,6 +72,27 @@ public sealed class ComprobadorFalso : IComprobador
     }
 }
 
+/// <summary>Un canal de aviso de mentira: anota lo que se le manda y falla cuando el test lo decide.</summary>
+public sealed class CanalFalso(CanalAviso canal) : ICanalDeAviso
+{
+    public CanalAviso Canal { get; } = canal;
+
+    public ConcurrentQueue<(string Destino, TextoDeAviso Texto)> Enviados { get; } = new();
+
+    /// <summary>Se llama antes de cada envío con el número de intento (desde 1); puede lanzar para simular un fallo o esperar.</summary>
+    public Func<int, CancellationToken, Task> Antes { get; set; } = (_, _) => Task.CompletedTask;
+
+    private int _intentos;
+
+    public int Intentos => Volatile.Read(ref _intentos);
+
+    public async Task EnviarAsync(string destino, TextoDeAviso texto, CancellationToken cancellationToken)
+    {
+        await Antes(Interlocked.Increment(ref _intentos), cancellationToken);
+        Enviados.Enqueue((destino, texto));
+    }
+}
+
 public sealed class RegistroDeEventos : IManejadorDeEventos
 {
     public ConcurrentQueue<EventoDeSeguimiento> Eventos { get; } = new();
@@ -92,11 +115,13 @@ public sealed class EntornoDeWorker : IAsyncDisposable
 {
     private readonly ServiceProvider _proveedor;
 
-    public EntornoDeWorker(string cadenaConexion, DateTimeOffset inicio, int concurrencia = 8, TimeSpan? esperaReintento = null)
+    public EntornoDeWorker(string cadenaConexion, DateTimeOffset inicio, int concurrencia = 8, TimeSpan? esperaReintento = null, bool conAvisos = true)
     {
         Reloj = new FakeTimeProvider(inicio);
         Comprobador = new ComprobadorFalso();
         Eventos = new RegistroDeEventos();
+        Correo = new CanalFalso(CanalAviso.Correo);
+        Telegram = new CanalFalso(CanalAviso.Telegram);
         CadenaConexion = cadenaConexion;
 
         var servicios = new ServiceCollection();
@@ -108,6 +133,14 @@ public sealed class EntornoDeWorker : IAsyncDisposable
         servicios.AddSingleton<ColaDeVencimientos>();
         servicios.AddSingleton<MetricasVigia>();
         servicios.AddSingleton<IManejadorDeEventos>(Eventos);
+        servicios.AddSingleton(Options.Create(conAvisos
+            ? new OpcionesDeAvisos { Destinatarios = ["guardia@ejemplo.com"], ChatsTelegram = ["99"], TokenTelegram = "token-de-prueba", Reserva = TimeSpan.FromMinutes(2) }
+            : new OpcionesDeAvisos()));
+        servicios.AddSingleton(Options.Create(new OpcionesSmtp { Servidor = "correo.ejemplo.com" }));
+        servicios.AddSingleton<DestinosDeAviso>();
+        servicios.AddSingleton<ICanalDeAviso>(Correo);
+        servicios.AddSingleton<ICanalDeAviso>(Telegram);
+        servicios.AddSingleton<ProcesadorDeAvisos>();
         servicios.AddSingleton<EjecutorDeMonitor>();
         servicios.AddSingleton<Planificador>();
         servicios.AddSingleton(Options.Create(new OpcionesPlanificador { Concurrencia = concurrencia, EsperaReintento = esperaReintento ?? TimeSpan.Zero }));
@@ -121,6 +154,14 @@ public sealed class EntornoDeWorker : IAsyncDisposable
     public FakeTimeProvider Reloj { get; }
 
     public ComprobadorFalso Comprobador { get; }
+
+    public CanalFalso Correo { get; }
+
+    public CanalFalso Telegram { get; }
+
+    public IServiceProvider Servicios => _proveedor;
+
+    public ProcesadorDeAvisos Avisos => _proveedor.GetRequiredService<ProcesadorDeAvisos>();
 
     public RegistroDeEventos Eventos { get; }
 
@@ -161,16 +202,16 @@ public sealed class EntornoDeWorker : IAsyncDisposable
     public async ValueTask DisposeAsync() => await _proveedor.DisposeAsync();
 }
 
-public class WorkerTests : IAsyncLifetime
+public abstract class BaseWorkerTest : IAsyncLifetime
 {
     private static readonly SemaphoreSlim Arranque = new(1, 1);
     private static ServidorPostgres? _servidor;
 
-    private static readonly DateTimeOffset Inicio = new(2026, 10, 15, 10, 0, 0, TimeSpan.Zero);
+    protected static readonly DateTimeOffset Inicio = new(2026, 10, 15, 10, 0, 0, TimeSpan.Zero);
 
-    private string _cadena = string.Empty;
+    protected string Cadena { get; private set; } = string.Empty;
 
-    private static CancellationToken Cancelacion => TestContext.Current.CancellationToken;
+    protected static CancellationToken Cancelacion => TestContext.Current.CancellationToken;
 
     public async ValueTask InitializeAsync()
     {
@@ -185,9 +226,9 @@ public class WorkerTests : IAsyncLifetime
             Arranque.Release();
         }
 
-        _cadena = await _servidor.CrearBaseDeDatosAsync();
+        Cadena = await _servidor.CrearBaseDeDatosAsync();
 
-        await using var db = ServidorPostgres.CrearContexto(_cadena);
+        await using var db = ServidorPostgres.CrearContexto(Cadena);
         await new Particiones(db).AsegurarAsync(Inicio, Cancelacion);
     }
 
@@ -197,7 +238,7 @@ public class WorkerTests : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
-    private async Task<MonitorDeDominio> GuardarAsync(int numero, int intervaloSegundos = 60, int fallos = 3)
+    protected async Task<MonitorDeDominio> GuardarAsync(int numero, int intervaloSegundos = 60, int fallos = 3)
     {
         var monitor = MonitorDeDominio.Crear(
             $"Monitor {numero}",
@@ -208,23 +249,41 @@ public class WorkerTests : IAsyncLifetime
             null,
             Inicio.AddDays(-1)).Valor;
 
-        await using var db = ServidorPostgres.CrearContexto(_cadena);
+        await using var db = ServidorPostgres.CrearContexto(Cadena);
         await new RepositorioMonitores(db).AgregarAsync(monitor, Cancelacion);
 
         return monitor;
     }
 
-    private static ResultadoComprobacion Fallo(string error = "Sin respuesta") =>
+    protected static ResultadoComprobacion Fallo(string error = "Sin respuesta") =>
         ResultadoComprobacion.Fallido(TipoFallo.TiempoAgotado, error, TimeSpan.FromSeconds(10));
 
-    private static int Numero(string host) => int.Parse(host.Split('.')[0][1..], System.Globalization.CultureInfo.InvariantCulture);
+    protected static int Numero(string host) => int.Parse(host.Split('.')[0][1..], System.Globalization.CultureInfo.InvariantCulture);
 
+    protected static async Task EsperarAsync(Func<bool> condicion)
+    {
+        var limite = DateTime.UtcNow.AddSeconds(20);
+
+        while (!condicion())
+        {
+            if (DateTime.UtcNow > limite)
+            {
+                throw new TimeoutException("La condición no se cumplió a tiempo.");
+            }
+
+            await Task.Delay(20, Cancelacion);
+        }
+    }
+}
+
+public class WorkerTests : BaseWorkerTest
+{
     // --- Ejecutor -----------------------------------------------------------------------------
 
     [Fact]
     public async Task Una_comprobacion_guarda_el_resultado_y_el_estado()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
 
         await entorno.Ejecutor.EjecutarAsync(monitor, [], Cancelacion);
@@ -241,7 +300,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_fallo_puntual_se_repite_antes_de_contarlo()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Comprobador.Respuesta = (_, llamada) => llamada == 1 ? Fallo() : ResultadoComprobacion.Exito(TimeSpan.FromMilliseconds(80));
 
@@ -256,7 +315,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_fallo_que_persiste_tras_el_reintento_cuenta_una_sola_vez()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Comprobador.Respuesta = (_, _) => Fallo();
 
@@ -271,7 +330,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_destino_bloqueado_no_se_reintenta()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Comprobador.Respuesta = (_, _) => ResultadoComprobacion.Fallido(TipoFallo.DestinoBloqueado, "Bloqueado", TimeSpan.Zero);
 
@@ -283,7 +342,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task No_se_reintenta_si_dos_comprobaciones_no_caben_en_el_intervalo()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = MonitorDeDominio.Crear(
             "Justo",
             new ConfiguracionHttp(new Uri("https://m9.ejemplo.com/")) { TiempoMaximo = TimeSpan.FromSeconds(20) },
@@ -307,7 +366,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Tres_fallos_seguidos_abren_un_incidente_y_avisan_una_vez()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Comprobador.Respuesta = (_, _) => Fallo("Sin respuesta en 10 s.");
 
@@ -328,7 +387,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Al_recuperarse_se_cierra_el_incidente_y_se_avisa_una_vez()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         var caido = true;
         entorno.Comprobador.Respuesta = (_, _) => caido ? Fallo() : ResultadoComprobacion.Exito(TimeSpan.FromMilliseconds(50));
@@ -350,7 +409,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_manejador_que_falla_no_impide_que_todo_quede_guardado()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Eventos.Fallar = true;
 
@@ -364,7 +423,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task En_mantenimiento_se_guarda_el_resultado_sin_contar_ni_avisar()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         entorno.Comprobador.Respuesta = (_, _) => Fallo();
         var ventana = VentanaMantenimiento.Crear([monitor.Id], Inicio.AddMinutes(-5), Inicio.AddHours(1), "Migración").Valor;
@@ -385,7 +444,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Al_acabar_el_mantenimiento_vuelve_a_desconocido_y_se_recupera_con_la_primera_comprobacion()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         var ventana = VentanaMantenimiento.Crear([monitor.Id], Inicio.AddMinutes(-5), Inicio.AddMinutes(2), "Reinicio").Valor;
 
@@ -402,7 +461,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Si_no_se_puede_guardar_no_se_propaga_el_error_y_se_reintenta_desde_la_base_de_datos()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var fantasma = MonitorDeDominio.Crear("Fantasma", new ConfiguracionHttp(new Uri("https://m7.ejemplo.com/")), TimeSpan.FromSeconds(60), 3, null, null, Inicio).Valor;
 
         await Should.NotThrowAsync(() => entorno.Ejecutor.EjecutarAsync(fantasma, [], Cancelacion));
@@ -418,7 +477,7 @@ public class WorkerTests : IAsyncLifetime
     public async Task Cincuenta_monitores_durante_una_hora_hacen_exactamente_las_comprobaciones_que_tocan()
     {
         const int monitores = 50;
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio, concurrencia: 8);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio, concurrencia: 8);
 
         var caidos = new HashSet<int> { 3, 17, 42 };
         var lentos = new HashSet<int> { 5 };
@@ -456,12 +515,13 @@ public class WorkerTests : IAsyncLifetime
             .ToDictionaryAsync(g => g.Key, Cancelacion);
 
         porMonitor.Count.ShouldBe(monitores);
-        // Un monitor de 60 s hace una comprobación cada 60 s desde su primera: en una hora, 60 (o 61 si su
-        // primera cayó justo al empezar y el reloj llegó a pasar la hora en punto por los empujones del test).
+        // Cada monitor vence cada 60 s desde su primer vencimiento, que es un punto fijo dentro de su primer minuto.
+        // Hasta el final de la simulación le tocan 60 comprobaciones (61 si su primer vencimiento fue casi inmediato
+        // y los empujones de un milisegundo del test llevaron el reloj un poco más allá de la hora en punto): ni una más ni una menos.
         var fin = entorno.Reloj.GetUtcNow();
         var anomalos = porMonitor
-            .Where(m => m.Value.Total != (int)((fin - m.Value.Primero) / TimeSpan.FromSeconds(60)) + 1)
-            .Select(m => $"{m.Key}: {m.Value.Total} (primera a las {m.Value.Primero:HH:mm:ss.fff}, fin {fin:HH:mm:ss.fff})")
+            .Where(m => m.Value.Total != (int)((fin - ColaDeVencimientos.PrimerVencimiento(m.Key, TimeSpan.FromSeconds(60), Inicio)) / TimeSpan.FromSeconds(60)) + 1)
+            .Select(m => $"{m.Key}: {m.Value.Total} (fin {fin:HH:mm:ss.fff})")
             .ToList();
         anomalos.ShouldBeEmpty("ni una comprobación de más ni de menos");
         porMonitor.Values.ShouldAllBe(m => m.Total == 60 || m.Total == 61);
@@ -483,7 +543,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_monitor_con_intervalo_largo_se_comprueba_menos_veces()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var rapido = await GuardarAsync(1, 60);
         var lento = await GuardarAsync(2, 300);
 
@@ -510,7 +570,7 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_monitor_pausado_deja_de_comprobarse_tras_recargar()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         var monitor = await GuardarAsync(1);
         await entorno.Planificador.StartAsync(Cancelacion);
         await EsperarAsync(() => entorno.Cola.Cantidad == 1);
@@ -545,8 +605,8 @@ public class WorkerTests : IAsyncLifetime
     [Fact]
     public async Task Un_aviso_de_postgres_hace_que_el_worker_conozca_un_monitor_nuevo()
     {
-        await using var entorno = new EntornoDeWorker(_cadena, Inicio);
-        using var escucha = new EscuchaDeCambios(_cadena, entorno.Planificador, entorno.Reloj, NullLogger<EscuchaDeCambios>.Instance);
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
+        using var escucha = new EscuchaDeCambios(Cadena, entorno.Planificador, entorno.Reloj, NullLogger<EscuchaDeCambios>.Instance);
         await entorno.Planificador.StartAsync(Cancelacion);
         await escucha.StartAsync(Cancelacion);
 
@@ -564,21 +624,6 @@ public class WorkerTests : IAsyncLifetime
         {
             await escucha.StopAsync(CancellationToken.None);
             await entorno.Planificador.StopAsync(CancellationToken.None);
-        }
-    }
-
-    private static async Task EsperarAsync(Func<bool> condicion)
-    {
-        var limite = DateTime.UtcNow.AddSeconds(20);
-
-        while (!condicion())
-        {
-            if (DateTime.UtcNow > limite)
-            {
-                throw new TimeoutException("La condición no se cumplió a tiempo.");
-            }
-
-            await Task.Delay(20, Cancelacion);
         }
     }
 }

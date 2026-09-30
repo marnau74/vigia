@@ -28,4 +28,19 @@ internal static partial class Registros
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Se perdió la escucha de cambios de monitores; se reintenta en {Segundos} s.")]
     public static partial void EscuchaPerdida(this ILogger log, Exception excepcion, double segundos);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Falló el aviso {AvisoId} por {Canal} (intento {Intentos}, abandonado: {Abandonado}).")]
+    public static partial void AvisoFallo(this ILogger log, Guid avisoId, string canal, int intentos, bool abandonado);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "El aviso {AvisoId} por {Canal} se abandonó tras agotar los reintentos: hay que revisar el canal.")]
+    public static partial void AvisoAbandonado(this ILogger log, Guid avisoId, string canal);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falló el envío de avisos; se reintentará.")]
+    public static partial void EnvioDeAvisosFallo(this ILogger log, Exception excepcion);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "No hay ningún destino de aviso configurado: los incidentes se guardarán pero no avisarán a nadie (secciones Avisos y Correo).")]
+    public static partial void SinDestinos(this ILogger log);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Avisos} avisos antiguos eliminados.")]
+    public static partial void AvisosPurgados(this ILogger log, int avisos);
 }
