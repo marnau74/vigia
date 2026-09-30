@@ -26,6 +26,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
   la dirección ya validada (sin DNS rebinding), bloquea los rangos internos y de metadatos de las
   nubes (también escritos como IPv6 o como número), valida cada redirección y el esquema, y prohíbe el
   proxy. Solo se puede apuntar a la red privada con un permiso explícito en el monitor.
-- 186 tests, con servidores reales en local (web con HTTPS, DNS por UDP, TCP) y pruebas de mutación
-  sobre cada defensa.
+- Tests de las comprobaciones con servidores reales en local (web con HTTPS, DNS por UDP, TCP) y
+  pruebas de mutación sobre cada defensa.
+- **Dominio de los monitores**: monitores con sus reglas de validación (intervalo mínimo de 30 s, tiempo
+  máximo menor que el intervalo, configuración correcta para cada tipo), grupos para las páginas de
+  estado y ventanas de mantenimiento.
+- **Máquina de estados** (desconocido, operativo, degradado, sospechoso, caído y mantenimiento): un
+  aviso de caída y otro de recuperación por incidente, sin repeticiones; los fallos aislados no avisan;
+  el mantenimiento no cuenta ni abre incidentes (ADR 0003). Se prueba con secuencias de resultados y
+  con diez mil secuencias aleatorias contra un modelo de referencia.
+- **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
+  tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
+  redondeado hacia arriba; percentiles p50 y p95 de la latencia.
 
