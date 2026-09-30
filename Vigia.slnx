@@ -11,6 +11,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Vigia.Api.Tests/Vigia.Api.Tests.csproj" />
     <Project Path="tests/Vigia.Arquitectura.Tests/Vigia.Arquitectura.Tests.csproj" />
+    <Project Path="tests/Vigia.Comprobaciones.Tests/Vigia.Comprobaciones.Tests.csproj" />
     <Project Path="tests/Vigia.Dominio.Tests/Vigia.Dominio.Tests.csproj" />
   </Folder>
 </Solution>
