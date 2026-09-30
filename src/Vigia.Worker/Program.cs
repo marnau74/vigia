@@ -25,7 +25,7 @@ builder.Services.Configure<OpcionesDeAvisos>(builder.Configuration.GetSection(Op
 builder.Services.AddComprobaciones();
 builder.Services.AddSingleton<ColaDeVencimientos>();
 builder.Services.AddSingleton<MetricasVigia>();
-builder.Services.AddSingleton<IManejadorDeEventos, ManejadorDeEventosVacio>();
+builder.Services.AddSingleton<IManejadorDeEventos, PublicadorDeComprobaciones>();
 builder.Services.AddSingleton<DestinosDeAviso>();
 builder.Services.AddSingleton<EjecutorDeMonitor>();
 

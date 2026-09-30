@@ -27,14 +27,11 @@ public static class Extensions
 
         builder.Services.AddServiceDiscovery();
 
-        builder.Services.ConfigureHttpClientDefaults(http =>
-        {
-            // Turn on resilience by default
-            http.AddStandardResilienceHandler();
-
-            // Turn on service discovery by default
-            http.AddServiceDiscovery();
-        });
+        // Sin resiliencia «por defecto» en todos los clientes HTTP (la plantilla de Aspire la añade): los
+        // clientes de las comprobaciones deben medir UN intento, con su tiempo máximo, y un reintento
+        // automático o un cortacircuitos falsearía la latencia y los fallos que Vigía tiene que contar.
+        // Quien quiera resiliencia (el panel llamando a la API) la pide en su propio cliente con AddStandardResilienceHandler().
+        builder.Services.ConfigureHttpClientDefaults(http => http.AddServiceDiscovery());
 
         // Uncomment the following to restrict the allowed schemes for service discovery.
         // builder.Services.Configure<ServiceDiscoveryOptions>(options =>
@@ -114,13 +111,14 @@ public static class Extensions
         // instancia está viva y si puede hablar con la base de datos.
 
         // Todas las comprobaciones deben pasar para considerar que la instancia puede recibir tráfico.
-        app.MapHealthChecks(HealthEndpointPath);
+        // AllowAnonymous: si la aplicación exige sesión por defecto (la API lo hace), la salud sigue siendo de todos.
+        app.MapHealthChecks(HealthEndpointPath).AllowAnonymous();
 
         // Solo las comprobaciones con la etiqueta «live» deben pasar para considerar que el proceso está vivo.
         app.MapHealthChecks(AlivenessEndpointPath, new HealthCheckOptions
         {
             Predicate = r => r.Tags.Contains("live")
-        });
+        }).AllowAnonymous();
 
         return app;
     }

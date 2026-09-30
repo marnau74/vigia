@@ -263,6 +263,30 @@ public class GrupoTests
         Grupo.Crear("produccion", "  Producción  ", true).Valor.Nombre.ShouldBe("Producción");
         Grupo.Crear("produccion", " ", true).Error.Codigo.ShouldBe("grupo.nombre_invalido");
     }
+
+    [Fact]
+    public void Un_grupo_se_renombra_y_cambia_su_visibilidad_pero_no_su_identificador()
+    {
+        var grupo = Grupo.Crear("produccion", "Producción", publico: false).Valor;
+
+        grupo.Modificar("  Sistemas de producción ", publico: true).EsExito.ShouldBeTrue();
+
+        grupo.Nombre.ShouldBe("Sistemas de producción");
+        grupo.Publico.ShouldBeTrue();
+        grupo.Slug.ShouldBe("produccion");
+    }
+
+    [Fact]
+    public void Un_nombre_invalido_no_cambia_nada_al_modificar()
+    {
+        var grupo = Grupo.Crear("produccion", "Producción", publico: false).Valor;
+
+        grupo.Modificar(" ", publico: true).Error.Codigo.ShouldBe("grupo.nombre_invalido");
+        grupo.Modificar(new string('x', 101), publico: true).EsFallo.ShouldBeTrue();
+
+        grupo.Nombre.ShouldBe("Producción");
+        grupo.Publico.ShouldBeFalse();
+    }
 }
 
 public class VentanaMantenimientoTests

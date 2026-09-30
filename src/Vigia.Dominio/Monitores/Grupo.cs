@@ -27,10 +27,10 @@ public sealed partial class Grupo
     /// <summary>La parte de la URL de la página de estado: minúsculas, números y guiones.</summary>
     public string Slug { get; }
 
-    public string Nombre { get; }
+    public string Nombre { get; private set; }
 
     /// <summary>Si su página de estado se puede ver sin iniciar sesión.</summary>
-    public bool Publico { get; }
+    public bool Publico { get; private set; }
 
     public static Resultado<Grupo> Crear(string slug, string nombre, bool publico)
     {
@@ -44,6 +44,22 @@ public sealed partial class Grupo
         return nombreLimpio.Length is < 1 or > 100
             ? Resultado.Fallo<Grupo>(ErroresMonitor.GrupoNombreInvalido)
             : Resultado.Exito(new Grupo(Guid.NewGuid(), slug, nombreLimpio, publico));
+    }
+
+    /// <summary>Cambia el nombre y si la página de estado es pública. El identificador (slug) no cambia: es la dirección de la página.</summary>
+    public Resultado Modificar(string nombre, bool publico)
+    {
+        var nombreLimpio = nombre?.Trim() ?? string.Empty;
+
+        if (nombreLimpio.Length is < 1 or > 100)
+        {
+            return Resultado.Fallo(ErroresMonitor.GrupoNombreInvalido);
+        }
+
+        Nombre = nombreLimpio;
+        Publico = publico;
+
+        return Resultado.Exito();
     }
 
     [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.CultureInvariant)]

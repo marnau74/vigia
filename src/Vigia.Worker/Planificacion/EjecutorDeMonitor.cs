@@ -67,7 +67,7 @@ public sealed class EjecutorDeMonitor(
 
             metricas.Comprobacion(monitor.Tipo.ToString(), resultado.Correcto, resultado.Latencia);
             Contar(eventos);
-            await AvisarAsync(eventos, cancellationToken);
+            await AvisarAsync(new ComprobacionRegistrada(monitor.Id, momento, resultado.Correcto, resultado.Latencia, seguimiento.Estado, eventos), cancellationToken);
         }
         catch (Exception excepcion) when (excepcion is not OperationCanceledException)
         {
@@ -116,16 +116,11 @@ public sealed class EjecutorDeMonitor(
         }
     }
 
-    private async Task AvisarAsync(List<EventoDeSeguimiento> eventos, CancellationToken cancellationToken)
+    private async Task AvisarAsync(ComprobacionRegistrada comprobacion, CancellationToken cancellationToken)
     {
-        if (eventos.Count == 0)
-        {
-            return;
-        }
-
         try
         {
-            await manejador.ManejarAsync(eventos, cancellationToken);
+            await manejador.ManejarAsync(comprobacion, cancellationToken);
         }
         catch (Exception excepcion) when (excepcion is not OperationCanceledException)
         {
