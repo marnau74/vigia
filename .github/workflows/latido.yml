@@ -1,0 +1,20 @@
+name: latido
+
+# Vigía se vigila a sí mismo: si se cae el propio monitor, no hay nadie que avise. Este flujo, desde fuera del servidor, comprueba
+# cada diez minutos que la página de estado responde; si no, el flujo falla y GitHub avisa por correo al propietario del repositorio.
+# Se activa definiendo la variable del repositorio URL_ESTADO (p. ej. https://estado.ejemplo.com/estado/servicios).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  latido:
+    if: vars.URL_ESTADO != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: La página de estado responde
+        run: |
+          curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 10 "${{ vars.URL_ESTADO }}" | grep -q "<h1>"
