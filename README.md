@@ -46,6 +46,40 @@ dirección ya validada (así el DNS no puede contestar otra cosa al conectar), b
 y los metadatos de las nubes (también escritos como IPv6 o como número), valida cada redirección y solo
 admite `http` y `https`. Está explicado en el [ADR 0002](docs/adr/0002-proteccion-contra-ssrf.md).
 
+## Estados, incidentes y disponibilidad
+
+Cada comprobación alimenta una máquina de estados (código puro de dominio, probado con secuencias de
+resultados y con diez mil secuencias aleatorias):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Desconocido
+    Desconocido --> Operativo : comprobación OK
+    Operativo --> Degradado : OK pero lento
+    Degradado --> Operativo
+    Operativo --> Sospechoso : 1 fallo
+    Degradado --> Sospechoso : 1 fallo
+    Sospechoso --> Operativo : OK
+    Sospechoso --> Caido : N fallos seguidos, abre incidente y avisa
+    Caido --> Operativo : OK, cierra el incidente y avisa
+    Operativo --> Mantenimiento : ventana de mantenimiento
+    Mantenimiento --> Desconocido : fin de la ventana
+```
+
+- **Un fallo aislado no avisa:** hacen falta N fallos seguidos (3 por defecto) para dar un servicio por caído.
+- **Un aviso por transición:** una caída y una recuperación por incidente, sin repeticiones.
+- **El mantenimiento no cuenta:** ni abre incidentes ni avisa ni entra en la disponibilidad.
+
+La disponibilidad se calcula sobre el tiempo pasado en cada estado:
+
+```
+disponibilidad = tiempo en pie / (tiempo en pie + tiempo caído)
+```
+
+El mantenimiento y el tiempo sin datos quedan fuera, y el porcentaje se trunca, no se redondea hacia
+arriba (99,9996 % se enseña como 99,99 %, nunca como 100 %). Para 30 días, el 99,9 % permite 43
+minutos y 12 segundos de caída. Todo está razonado en el [ADR 0003](docs/adr/0003-maquina-de-estados-y-disponibilidad.md).
+
 ## Cómo ejecutarlo
 
 Requiere el SDK de .NET 10 y Docker.
