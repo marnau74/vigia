@@ -162,7 +162,7 @@ public class RepositorioSeguimientoTests : BaseDeDatosTest
         var resultado = new ResultadoEntidad { MonitorId = monitorId, Momento = _momento, Correcto = correcto, LatenciaMs = latenciaMs, Fallo = (short)(correcto ? 0 : 1), Error = error };
 
         await new Particiones(db).AsegurarAsync(_momento, Cancelacion);
-        await repositorio.GuardarAsync(seguimiento, eventos, resultado, Cancelacion);
+        await repositorio.GuardarAsync(seguimiento, eventos, resultado, [], Cancelacion);
 
         return eventos;
     }
@@ -262,7 +262,7 @@ public class RepositorioSeguimientoTests : BaseDeDatosTest
             eventos.OfType<IncidenteAbierto>().Count().ShouldBe(1);
             var invalido = new ResultadoEntidad { MonitorId = monitor.Id, Momento = _momento, Correcto = false, Fallo = 1, Error = new string('x', 600) };
 
-            await Should.ThrowAsync<DbUpdateException>(() => repositorio.GuardarAsync(seguimiento, eventos, invalido, Cancelacion));
+            await Should.ThrowAsync<DbUpdateException>(() => repositorio.GuardarAsync(seguimiento, eventos, invalido, [], Cancelacion));
         }
 
         await using var lectura = NuevoContexto();
@@ -304,7 +304,7 @@ public class RepositorioSeguimientoTests : BaseDeDatosTest
             var repositorio = new RepositorioSeguimiento(db);
             var seguimiento = await repositorio.CargarAsync(monitor.Id, _momento, Cancelacion);
             var eventos = seguimiento.ActualizarMantenimiento(true, _momento);
-            await repositorio.GuardarAsync(seguimiento, eventos, new ResultadoEntidad { MonitorId = monitor.Id, Momento = _momento, EnMantenimiento = true, Fallo = 1 }, Cancelacion);
+            await repositorio.GuardarAsync(seguimiento, eventos, new ResultadoEntidad { MonitorId = monitor.Id, Momento = _momento, EnMantenimiento = true, Fallo = 1 }, [], Cancelacion);
         }
 
         await using var lectura = NuevoContexto();

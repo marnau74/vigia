@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
+using Vigia.Dominio.Avisos;
 using Vigia.Dominio.Mantenimiento;
 using Vigia.Dominio.Monitores;
 using Vigia.Dominio.Seguimiento;
@@ -23,6 +24,8 @@ public sealed class VigiaDbContext(DbContextOptions<VigiaDbContext> opciones) : 
     public DbSet<AgregadoHora> ResultadosHora => Set<AgregadoHora>();
 
     public DbSet<AgregadoDia> ResultadosDia => Set<AgregadoDia>();
+
+    public DbSet<Aviso> Avisos => Set<Aviso>();
 
     public DbSet<VentanaMantenimiento> VentanasMantenimiento => Set<VentanaMantenimiento>();
 

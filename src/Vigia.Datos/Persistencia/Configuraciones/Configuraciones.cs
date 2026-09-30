@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
+using Vigia.Dominio.Avisos;
 using Vigia.Dominio.Mantenimiento;
 using Vigia.Dominio.Monitores;
 using Vigia.Dominio.Seguimiento;
@@ -167,5 +168,35 @@ internal sealed class VentanaMantenimientoConfiguracion : IEntityTypeConfigurati
         builder.Property<Guid[]>("_monitorIds").HasColumnName("monitor_ids").IsRequired();
 
         builder.HasIndex(v => v.Fin);
+    }
+}
+
+internal sealed class AvisoConfiguracion : IEntityTypeConfiguration<Aviso>
+{
+    public void Configure(EntityTypeBuilder<Aviso> builder)
+    {
+        builder.ToTable("avisos");
+        builder.HasKey(a => a.Id);
+
+        builder.Property(a => a.Tipo).HasConversion<short>().IsRequired();
+        builder.Property(a => a.Canal).HasConversion<short>().IsRequired();
+        builder.Property(a => a.Destino).HasMaxLength(320).IsRequired();
+        builder.Property(a => a.CreadoEn).IsRequired();
+        builder.Property(a => a.Intentos).IsRequired();
+        builder.Property(a => a.ProximoIntentoEn).IsRequired();
+        builder.Property(a => a.Abandonado).IsRequired();
+        builder.Property(a => a.UltimoError).HasMaxLength(500);
+        builder.Ignore(a => a.EstaPendiente);
+
+        // Un aviso no tiene sentido sin su incidente ni su monitor: se borra con ellos.
+        builder.Property(a => a.MonitorId).IsRequired();
+        builder.HasOne<Incidente>().WithMany().HasForeignKey(a => a.IncidenteId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Dominio.Monitores.Monitor>().WithMany().HasForeignKey(a => a.MonitorId).OnDelete(DeleteBehavior.Cascade);
+
+        // La garantía contra duplicados: un solo aviso de cada tipo, por incidente, canal y destino.
+        builder.HasIndex(a => new { a.IncidenteId, a.Tipo, a.Canal, a.Destino }).IsUnique().HasDatabaseName("ux_avisos_sin_duplicados");
+
+        // Lo que consulta el enviador: los pendientes, por orden de vencimiento. Parcial: los ya enviados no pesan.
+        builder.HasIndex(a => a.ProximoIntentoEn).HasFilter("enviado_en IS NULL AND abandonado = false").HasDatabaseName("ix_avisos_pendientes");
     }
 }

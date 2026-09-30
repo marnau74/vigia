@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
+using Vigia.Dominio.Avisos;
 using Vigia.Dominio.Mantenimiento;
 using Vigia.Dominio.Seguimiento;
 
@@ -28,7 +29,8 @@ public sealed class RepositorioMonitores(VigiaDbContext db)
 /// Guarda y recupera el seguimiento de un monitor (su máquina de estados) junto con lo que produce:
 /// el resultado de la comprobación, los cambios de estado y los incidentes. Todo lo de una
 /// comprobación se guarda en <b>una sola operación</b> (una transacción): o queda todo o no queda nada,
-/// y así nunca hay un incidente abierto sin su cambio de estado, ni un estado sin su resultado.
+/// y así nunca hay un incidente abierto sin su cambio de estado, ni un estado sin su resultado, ni una
+/// caída sin su aviso.
 /// </summary>
 public sealed class RepositorioSeguimiento(VigiaDbContext db)
 {
@@ -53,13 +55,18 @@ public sealed class RepositorioSeguimiento(VigiaDbContext db)
         SeguimientoDeMonitor seguimiento,
         IReadOnlyList<EventoDeSeguimiento> eventos,
         ResultadoEntidad resultado,
+        IReadOnlyList<Aviso> avisos,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(seguimiento);
         ArgumentNullException.ThrowIfNull(eventos);
         ArgumentNullException.ThrowIfNull(resultado);
+        ArgumentNullException.ThrowIfNull(avisos);
 
         db.Resultados.Add(resultado);
+
+        // Los avisos entran en la misma transacción que el cambio de estado que los provoca (bandeja de salida).
+        db.Avisos.AddRange(avisos);
 
         foreach (var evento in eventos)
         {
