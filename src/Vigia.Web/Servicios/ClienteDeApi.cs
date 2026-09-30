@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
 
 using Vigia.Contratos;
 
@@ -78,7 +79,7 @@ public interface IClienteDeApi
 /// El cliente HTTP de la API. El token de sesión va en la cookie de inicio de sesión del panel: cada llamada lo
 /// lee del usuario actual, así que el panel nunca lo guarda en ningún otro sitio.
 /// </summary>
-public sealed class ClienteDeApi(HttpClient http, AuthenticationStateProvider estado) : IClienteDeApi
+public sealed class ClienteDeApi(HttpClient http, AuthenticationStateProvider estado, IHttpContextAccessor? contexto = null) : IClienteDeApi
 {
     public const string ClaimDelToken = "api_token";
 
@@ -158,6 +159,14 @@ public sealed class ClienteDeApi(HttpClient http, AuthenticationStateProvider es
         if (cuerpo is not null)
         {
             peticion.Content = JsonContent.Create(cuerpo, options: Json);
+        }
+
+        if (!conSesion && contexto?.HttpContext?.Connection.RemoteIpAddress is { } cliente)
+        {
+            // Entrar y la página pública son los dos endpoints sin sesión y con límite de peticiones por cliente: si la web no
+            // dijera quién llama, la API vería siempre la dirección de la web y todos los visitantes compartirían un único límite
+            // (cinco intentos por minuto para el mundo entero: bastaría uno para dejar a todos sin poder entrar).
+            peticion.Headers.TryAddWithoutValidation("X-Forwarded-For", cliente.ToString());
         }
 
         if (conSesion)
