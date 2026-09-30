@@ -39,6 +39,8 @@ builder.AddProject<Projects.Vigia_Worker>("worker")
 
 builder.AddProject<Projects.Vigia_Web>("web")
     .WithReference(api)
+    // La dirección real de la API (el puerto lo asigna Aspire): la web la usa para las llamadas y para la conexión en vivo.
+    .WithEnvironment("Api__Url", api.GetEndpoint("http"))
     .WaitFor(api)
     .WithHttpHealthCheck("/health");
 

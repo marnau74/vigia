@@ -1,32 +1,60 @@
 # Vigía
 
-Monitor de servicios e infraestructura, autoalojado. Vigila webs y servicios (disponibilidad,
-latencia, certificados TLS, DNS y puertos), guarda el histórico, abre incidentes y avisa por
-correo y Telegram. Tiene un panel en tiempo real y una página de estado pública.
+Monitor de servicios e infraestructura, **autoalojado**. Vigila webs, certificados, DNS, puertos y equipos (disponibilidad y latencia),
+guarda el histórico, abre incidentes y avisa por correo y Telegram. Incluye un panel que se actualiza solo y una **página de estado
+pública** para tus usuarios.
 
-> En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
-> comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
-> planificador del worker, los avisos por correo y Telegram, la API con tiempo real y el panel con la página
-> de estado pública y la puesta en producción en un VPS. Falta el cierre (capturas y versión 1.0).
+![Página de estado pública](docs/img/pagina-de-estado.jpg)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/img/panel.jpg" alt="Panel con los monitores, su estado y su latencia"></td>
+    <td width="50%"><img src="docs/img/detalle-de-monitor.jpg" alt="Detalle de un monitor con disponibilidad, barras de 90 días y gráfica de latencia"></td>
+  </tr>
+</table>
+
+<sub>Capturas con datos de demostración. A la izquierda, el panel; a la derecha, el detalle de un monitor. También se ve bien en
+[móvil y en modo oscuro](docs/img/pagina-de-estado-movil-oscuro.jpg).</sub>
+
+Es un proyecto de portfolio hecho **como si fuera a usarlo en serio**: cada decisión con consecuencias está razonada en un
+[ADR](docs/adr/README.md), las garantías importantes las comprueba un test contra PostgreSQL real (no contra mocks), y se puede
+poner en producción en un VPS con una guía paso a paso.
+
+## Qué tiene de especial
+
+- **Un aviso por transición, sin duplicados ni pérdidas.** Los avisos se guardan en la misma transacción que el incidente (bandeja
+  de salida) y un índice único de la base de datos impide repetirlos, aunque haya reinicios o varias instancias.
+- **La disponibilidad que enseña es honesta.** Se calcula sobre el tiempo en cada estado, el mantenimiento no cuenta, sin datos dice
+  «—» y no un 100 %, y el porcentaje se trunca (99,9996 % se ve como 99,99 %).
+- **Seguridad de una herramienta que hace peticiones a direcciones de otros** (SSRF): una guardia resuelve el DNS una sola vez,
+  conecta a la IP ya validada y bloquea los rangos internos y los metadatos de las nubes.
+- **Escala sin trucos raros:** los resultados van en una tabla particionada por mes (retener es un `DROP TABLE` instantáneo) con agregados
+  por hora y por día; el planificador usa una cola de prioridad y concurrencia acotada.
+- **Accesible de verdad:** el estado nunca se indica solo con color, las gráficas son SVG propio con descripción y tabla de datos,
+  hay claro y oscuro y funciona en móvil.
+- **Se prueba todo lo que importa:** más de 840 tests, con PostgreSQL y Mailpit reales en contenedor, un servidor de Telegram falso, simulaciones
+  con reloj controlado y las defensas comprobadas rompiéndolas a propósito para ver que los tests fallan.
 
 ## Cómo está pensado
 
 ```mermaid
 flowchart LR
-    subgraph Solucion["Vigía"]
-        W["Worker<br/>planificador + comprobaciones"]
-        A["API<br/>monitores, histórico, tiempo real"]
-        P[("PostgreSQL")]
+    U(("Visitantes<br/>y administrador")) -->|HTTPS| C["Caddy"]
+    subgraph Solucion["Vigía (Docker Compose)"]
+        C --> WEB["Web<br/>Blazor: panel + página de estado"]
+        WEB -->|HTTP| A["API<br/>monitores, histórico, acceso"]
+        A <--> P[("PostgreSQL")]
+        W["Worker<br/>planificador, comprobaciones, avisos"] -->|resultados| P
+        A -. "LISTEN/NOTIFY" .-> W
+        W -. "LISTEN/NOTIFY" .-> A
     end
-    W -->|resultados| P
-    A <--> P
-    W -->|avisos| M["Correo / Telegram"]
     W -->|HTTP, TLS, DNS, TCP, ICMP| X["Servicios vigilados"]
+    W -->|avisos| M["Correo / Telegram"]
 ```
 
-El worker va separado de la API para que las comprobaciones sigan funcionando aunque la API se
-reinicie o se despliegue. Las dependencias entre proyectos van siempre hacia dentro y un proyecto de
-tests las comprueba.
+El worker va separado de la API para que las comprobaciones sigan funcionando aunque la API se reinicie o se despliegue, y ambos se
+avisan por `LISTEN/NOTIFY` de la base de datos que ya comparten. Solo Caddy se ve desde internet. Las dependencias entre proyectos van
+siempre hacia dentro y un proyecto de tests las comprueba.
 
 ## Las comprobaciones
 
@@ -154,8 +182,12 @@ Todo en el [ADR 0007](docs/adr/0007-panel-blazor.md).
 Requiere el SDK de .NET 10 y Docker.
 
 ```bash
-dotnet run --project src/Vigia.AppHost     # PostgreSQL + Mailpit + API + worker, con el panel de Aspire
+dotnet run --project src/Vigia.AppHost     # PostgreSQL + Mailpit + API + worker + web, con el panel de Aspire
 ```
+
+Con el entorno levantado, la web está en <http://localhost:5063> (contraseña de desarrollo: `vigia-local`) y los correos de aviso se ven en
+Mailpit (<http://localhost:8026>). Sin Aspire se pueden arrancar a mano el worker, la API y la web contra una PostgreSQL cualquiera
+(`ConnectionStrings__vigia` y `Api__Url`).
 
 Cada proyecto de `tests/` es un ejecutable:
 
@@ -188,6 +220,19 @@ infra/ansible/            preparar el servidor y desplegar
 tests/                    dominio, comprobaciones (con servidores reales en local), datos, worker, API y web
                           (con PostgreSQL real en contenedor), arquitectura
 ```
+
+## Límites conocidos
+
+Lo que esta versión **no** hace, a propósito o por alcance:
+
+- **Comprueba desde un solo sitio.** No distingue «el servicio está caído» de «mi servidor no llega a él»; para eso haría falta
+  comprobar desde varias ubicaciones.
+- **Un solo usuario.** Hay una contraseña compartida, sin usuarios, roles ni organizaciones (ADR 0006).
+- **Un servidor, sin alta disponibilidad.** Si el VPS cae, Vigía cae hasta que vuelve; por eso hay copias verificadas y un latido externo (ADR 0008).
+- **Los avisos son de caída y recuperación.** Los de caducidad de certificado y cambio de DNS están previstos pero no hechos.
+- **Las disponibilidades van con hasta una hora de retraso** (se calculan al cerrar cada hora); el estado y la latencia, en tiempo real.
+- El despliegue se ha probado entero en local; lo que necesita un servidor real (Ansible contra la máquina, los certificados y el flujo
+  de GitHub Actions) está escrito y revisado pero no ejecutado de extremo a extremo.
 
 ## Licencia
 

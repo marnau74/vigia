@@ -5,6 +5,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
 
 ## [Sin publicar]
 
+## [1.0.0] - 2026-09-30
+
+Primera versión completa.
+
 ### Añadido
 - Esqueleto de la solución .NET 10 por capas: dominio, comprobaciones de red, datos, worker, API,
   entorno local con .NET Aspire (PostgreSQL 17 y Mailpit) y observabilidad con OpenTelemetry.
