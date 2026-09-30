@@ -67,6 +67,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
 - **Corregido:** los clientes HTTP de las comprobaciones recibían de ServiceDefaults un manejador de
   resiliencia (reintentos y cortacircuitos) que falseaba la latencia y los fallos; ahora cada comprobación
   es un único intento.
+- **Panel y página de estado en Blazor** (ADR 0007): la página de estado es HTML dibujado en el servidor (sin
+  circuito, se refresca sola) y el panel es interactivo: lista de monitores con estado, latencia,
+  mini-gráfica de 24 h y disponibilidad, detalle con barras de 90 días, gráfica de latencia p50/p95,
+  incidentes, «probar ahora», pausar, editar y borrar con confirmación, grupos y ventanas de mantenimiento.
+  Se actualiza sin recargar por SignalR y, si se corta, lo dice y se pone al día al reconectar.
+- **Sesión del panel** con cookie cifrada que guarda el token de la API (el navegador nunca lo ve) y caduca
+  con él; salir es un `POST` con protección antifalsificación y la redirección tras entrar solo admite rutas
+  propias.
+- **Accesibilidad:** el estado siempre con palabra y forma (y las caídas con trama), gráficas en SVG propio
+  con descripción y tabla de datos, etiquetas y ayudas enlazadas en los formularios, anuncios para lectores
+  de pantalla, claro y oscuro, móvil sin desplazamiento horizontal.
 - **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
   tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
   redondeado hacia arriba; percentiles p50 y p95 de la latencia.
