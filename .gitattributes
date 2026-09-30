@@ -1,0 +1,5 @@
+# Los scripts y ficheros de despliegue se ejecutan en Linux: siempre con saltos de línea LF, aunque se editen en Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+Caddyfile text eol=lf
