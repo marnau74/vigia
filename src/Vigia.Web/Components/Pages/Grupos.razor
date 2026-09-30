@@ -1,0 +1,148 @@
+@page "/grupos"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+
+<PageTitle>Grupos · Vigía</PageTitle>
+
+<h1>Grupos</h1>
+<p class="nota">Un grupo reúne monitores en una página de estado. Si es pública, cualquiera puede verla en <code>/estado/&lt;identificador&gt;</code>, sin direcciones ni mensajes de error.</p>
+
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+@if (_grupos is null)
+{
+    <p class="nota" role="status">Cargando…</p>
+}
+else if (_grupos.Count == 0)
+{
+    <p class="nota">Todavía no hay grupos.</p>
+}
+else
+{
+    <div class="tabla-contenedor">
+        <table class="tabla">
+            <caption class="oculto">Grupos</caption>
+            <thead><tr><th scope="col">Nombre</th><th scope="col">Identificador</th><th scope="col">Monitores</th><th scope="col">Página de estado</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+            <tbody>
+                @foreach (var grupo in _grupos)
+                {
+                    <tr>
+                        <th scope="row">@grupo.Nombre</th>
+                        <td><code>@grupo.Slug</code></td>
+                        <td>@grupo.Monitores</td>
+                        <td>
+                            @if (grupo.Publico)
+                            {
+                                <a href="estado/@grupo.Slug">Pública</a>
+                            }
+                            else
+                            {
+                                <span>Privada</span>
+                            }
+                        </td>
+                        <td>
+                            @if (_borrando == grupo.Id)
+                            {
+                                <span>¿Borrar? Sus monitores se conservan.</span>
+                                <button type="button" class="boton pequeno peligro" @onclick="() => BorrarAsync(grupo.Id)">Sí</button>
+                                <button type="button" class="boton pequeno" @onclick="() => _borrando = null">No</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="boton pequeno" aria-label="Borrar el grupo @grupo.Nombre" @onclick="() => _borrando = grupo.Id">Borrar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<section class="tarjeta" aria-labelledby="nuevo-grupo">
+    <h2 id="nuevo-grupo">Nuevo grupo</h2>
+    <EditForm Model="_nuevo" OnValidSubmit="CrearAsync" FormName="grupo" class="formulario">
+        <div class="campo">
+            <label for="grupo-nombre">Nombre</label>
+            <InputText id="grupo-nombre" @bind-Value="_nuevo.Nombre" maxlength="100" required />
+        </div>
+        <div class="campo">
+            <label for="grupo-slug">Identificador</label>
+            <InputText id="grupo-slug" @bind-Value="_nuevo.Slug" maxlength="40" required aria-describedby="ayuda-slug" />
+            <p id="ayuda-slug" class="ayuda">Minúsculas, números y guiones. Es la dirección de la página pública y no se puede cambiar después.</p>
+        </div>
+        <div class="campo casilla">
+            <InputCheckbox id="grupo-publico" @bind-Value="_nuevo.Publico" />
+            <label for="grupo-publico">Página de estado pública</label>
+        </div>
+        <button type="submit" class="boton principal">Crear grupo</button>
+    </EditForm>
+</section>
+
+@code {
+    private IReadOnlyList<GrupoDto>? _grupos;
+    private readonly NuevoGrupo _nuevo = new();
+    private string? _error;
+    private Guid? _borrando;
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        var respuesta = await Api.GruposAsync();
+
+        if (Correcta(respuesta, out var error))
+        {
+            _grupos = respuesta.Valor;
+            _error = null;
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private async Task CrearAsync()
+    {
+        var respuesta = await Api.CrearGrupoAsync(new CuerpoGrupo(_nuevo.Slug.Trim(), _nuevo.Nombre.Trim(), _nuevo.Publico));
+
+        if (Correcta(respuesta, out var error))
+        {
+            _nuevo.Slug = string.Empty;
+            _nuevo.Nombre = string.Empty;
+            await CargarAsync();
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private async Task BorrarAsync(Guid id)
+    {
+        _borrando = null;
+        var respuesta = await Api.BorrarGrupoAsync(id);
+
+        if (Correcta(respuesta, out var error))
+        {
+            await CargarAsync();
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private sealed class NuevoGrupo
+    {
+        public string Nombre { get; set; } = string.Empty;
+
+        public string Slug { get; set; } = string.Empty;
+
+        public bool Publico { get; set; } = true;
+    }
+}

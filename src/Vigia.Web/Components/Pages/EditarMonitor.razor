@@ -1,0 +1,70 @@
+@page "/monitores/{Id:guid}/editar"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+
+<PageTitle>Editar monitor · Vigía</PageTitle>
+
+<p class="migas"><a href="monitores/@Id">← Volver al monitor</a></p>
+<h1>Editar monitor</h1>
+
+@if (_modelo is null)
+{
+    @if (_errorDeCarga is not null)
+    {
+        <p class="error" role="alert">@_errorDeCarga</p>
+    }
+    else
+    {
+        <p class="nota" role="status">Cargando…</p>
+    }
+}
+else
+{
+    <FormularioDeMonitor Modelo="_modelo" Grupos="_grupos" TipoFijo="true" TextoGuardar="Guardar cambios" Cancelar="@($"/monitores/{Id}")" Error="@_error" Guardando="_guardando" AlGuardar="GuardarAsync" />
+}
+
+@code {
+    private ModeloDeMonitor? _modelo;
+    private IReadOnlyList<GrupoDto> _grupos = [];
+    private string? _error;
+    private string? _errorDeCarga;
+    private bool _guardando;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var monitor = await Api.MonitorAsync(Id);
+
+        if (!Correcta(monitor, out var error))
+        {
+            _errorDeCarga = monitor.Error?.Codigo == "no_encontrado" ? "Este monitor no existe." : error;
+
+            return;
+        }
+
+        _modelo = ModeloDeMonitor.De(monitor.Valor!);
+
+        var grupos = await Api.GruposAsync();
+        _grupos = grupos.EsExito ? grupos.Valor! : [];
+    }
+
+    private async Task GuardarAsync(CuerpoMonitor cuerpo)
+    {
+        _guardando = true;
+        _error = null;
+        var respuesta = await Api.ModificarMonitorAsync(Id, cuerpo);
+        _guardando = false;
+
+        if (Correcta(respuesta, out var error))
+        {
+            Navegacion.NavigateTo($"/monitores/{Id}");
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+}

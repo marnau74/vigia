@@ -1,0 +1,295 @@
+@page "/monitores/{Id:guid}"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+@implements IAsyncDisposable
+@inject IConexionEnVivo Vivo
+
+<PageTitle>@(_monitor?.Nombre ?? "Monitor") · Vigía</PageTitle>
+
+<p class="migas"><a href="/">← Panel</a></p>
+
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+@if (_monitor is null)
+{
+    @if (_error is null)
+    {
+        <p class="nota" role="status">Cargando…</p>
+    }
+}
+else
+{
+    <div class="barra-titulo">
+        <div>
+            <h1>@_monitor.Nombre</h1>
+            <p class="secundario">@Textos.Tipo(_monitor.Tipo) · @Textos.Destino(_monitor) · cada @Formato.Duracion(_monitor.IntervaloSegundos)</p>
+        </div>
+        <div class="acciones">
+            @if (_monitor.Activo)
+            {
+                <InsigniaDeEstado Estado="_monitor.Estado" />
+            }
+            else
+            {
+                <span class="insignia desconocido"><span>En pausa</span></span>
+            }
+        </div>
+    </div>
+
+    <div class="anuncio" role="status" aria-live="polite">@_anuncio</div>
+
+    @if (_monitor.IncidenteAbierto is { } incidente)
+    {
+        <section class="tarjeta alerta" aria-labelledby="incidente-abierto">
+            <h2 id="incidente-abierto">Incidente en curso</h2>
+            <p>Caído desde el @Formato.Fecha(incidente.AbiertoEn) (@Formato.Duracion((Reloj.GetUtcNow() - incidente.AbiertoEn).TotalSeconds)), @incidente.Fallos fallos seguidos.</p>
+            <p><strong>Último error:</strong> <code>@incidente.Causa</code></p>
+        </section>
+    }
+
+    <div class="acciones fila">
+        <button type="button" class="boton" @onclick="ProbarAsync" disabled="@_probando">@(_probando ? "Probando…" : "Probar ahora")</button>
+        <button type="button" class="boton" @onclick="CambiarActivoAsync">@(_monitor.Activo ? "Pausar" : "Reanudar")</button>
+        <a class="boton" href="monitores/@_monitor.Id/editar">Editar</a>
+        @if (!_confirmarBorrado)
+        {
+            <button type="button" class="boton peligro" @onclick="() => _confirmarBorrado = true">Borrar</button>
+        }
+    </div>
+
+    @if (_confirmarBorrado)
+    {
+        <section class="tarjeta alerta" role="alertdialog" aria-labelledby="titulo-borrar">
+            <h2 id="titulo-borrar">¿Borrar «@_monitor.Nombre»?</h2>
+            <p>Se borra también todo su histórico e incidentes. No se puede deshacer.</p>
+            <div class="acciones fila">
+                <button type="button" class="boton peligro" @onclick="BorrarAsync">Sí, borrar</button>
+                <button type="button" class="boton" @onclick="() => _confirmarBorrado = false">Cancelar</button>
+            </div>
+        </section>
+    }
+
+    @if (_prueba is not null)
+    {
+        <section class="tarjeta" aria-live="polite" aria-labelledby="titulo-prueba">
+            <h2 id="titulo-prueba">Resultado de la prueba</h2>
+            @if (_prueba.Correcto)
+            {
+                <p><span class="etiqueta-estado ok">Correcta</span> en @Formato.Latencia(_prueba.LatenciaMs).</p>
+            }
+            else
+            {
+                <p><span class="etiqueta-estado caido">Fallida</span> (@_prueba.Fallo): @_prueba.Error</p>
+            }
+        </section>
+    }
+
+    <section aria-labelledby="titulo-disponibilidad">
+        <h2 id="titulo-disponibilidad">Disponibilidad</h2>
+        <dl class="cifras">
+            <div><dt>24 horas</dt><dd>@Formato.Porcentaje(_disponibilidad?.Ultimas24Horas)</dd></div>
+            <div><dt>7 días</dt><dd>@Formato.Porcentaje(_disponibilidad?.Ultimos7Dias)</dd></div>
+            <div><dt>30 días</dt><dd>@Formato.Porcentaje(_disponibilidad?.Ultimos30Dias)</dd></div>
+            <div><dt>90 días</dt><dd>@Formato.Porcentaje(_disponibilidad?.Ultimos90Dias)</dd></div>
+            <div><dt>Latencia actual</dt><dd>@Formato.Latencia(_monitor.UltimaLatenciaMs)</dd></div>
+            <div><dt>Última comprobación</dt><dd>@Formato.Hace(_monitor.UltimaComprobacion, Reloj.GetUtcNow())</dd></div>
+        </dl>
+        <p class="nota">Las disponibilidades se calculan al cerrar cada hora, así que pueden ir hasta una hora por detrás.</p>
+        <BarrasDeDisponibilidad Barras="_barras" />
+    </section>
+
+    <section aria-labelledby="titulo-latencia">
+        <div class="barra-titulo">
+            <h2 id="titulo-latencia">Latencia</h2>
+            <div class="selector" role="group" aria-label="Periodo de la gráfica">
+                @foreach (var (horas, texto) in Periodos)
+                {
+                    <button type="button" class="boton pequeno @(_horas == horas ? "activo" : null)" aria-pressed="@(_horas == horas ? "true" : "false")" @onclick="() => CambiarPeriodoAsync(horas)">@texto</button>
+                }
+            </div>
+        </div>
+        <GraficaDeLatencia Puntos="_latencia" />
+    </section>
+
+    <section aria-labelledby="titulo-incidentes">
+        <h2 id="titulo-incidentes">Incidentes</h2>
+        @if (_incidentes.Count == 0)
+        {
+            <p class="nota">Este monitor no ha tenido incidentes.</p>
+        }
+        else
+        {
+            <div class="tabla-contenedor">
+                <table class="tabla">
+                    <caption class="oculto">Incidentes del monitor</caption>
+                    <thead><tr><th scope="col">Inicio</th><th scope="col">Duración</th><th scope="col">Fallos</th><th scope="col">Causa</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in _incidentes)
+                        {
+                            <tr>
+                                <th scope="row">@Formato.Fecha(i.AbiertoEn) @(i.CerradoEn is null ? "(en curso)" : null)</th>
+                                <td>@Formato.Duracion(i.DuracionSegundos)</td>
+                                <td>@i.Fallos</td>
+                                <td><code>@i.Causa</code></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private static readonly (int Horas, string Texto)[] Periodos = [(24, "24 horas"), (72, "3 días"), (168, "7 días")];
+
+    private MonitorDto? _monitor;
+    private DisponibilidadDto? _disponibilidad;
+    private IReadOnlyList<BarraDiaria> _barras = [];
+    private IReadOnlyList<PuntoDeLatencia> _latencia = [];
+    private IReadOnlyList<IncidenteDto> _incidentes = [];
+    private PruebaDto? _prueba;
+    private string? _error;
+    private string? _anuncio;
+    private bool _probando;
+    private bool _confirmarBorrado;
+    private int _horas = 24;
+
+    [Parameter]
+    public Guid Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await CargarAsync();
+
+        Vivo.Recibida -= RecibirAsync;
+        Vivo.Reconectada -= CargarAsync;
+        Vivo.Recibida += RecibirAsync;
+        Vivo.Reconectada += CargarAsync;
+        await Vivo.IniciarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var monitor = await Api.MonitorAsync(Id);
+
+        if (!Correcta(monitor, out var error))
+        {
+            _error = monitor.Error?.Codigo == "no_encontrado" ? "Este monitor no existe (quizá se borró)." : error;
+            _monitor = null;
+
+            return;
+        }
+
+        _error = null;
+        _monitor = monitor.Valor;
+
+        // Si alguna parte falla, el resto de la página se sigue viendo.
+        var disponibilidad = await Api.DisponibilidadAsync(Id);
+        var barras = await Api.BarrasAsync(Id, 90);
+        var latencia = await Api.LatenciaAsync(Id, _horas);
+        var incidentes = await Api.IncidentesAsync(Id, false);
+
+        _disponibilidad = disponibilidad.EsExito ? disponibilidad.Valor : null;
+        _barras = barras.EsExito ? barras.Valor! : [];
+        _latencia = latencia.EsExito ? latencia.Valor! : [];
+        _incidentes = incidentes.EsExito ? incidentes.Valor! : [];
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CambiarPeriodoAsync(int horas)
+    {
+        _horas = horas;
+        var latencia = await Api.LatenciaAsync(Id, horas);
+        _latencia = latencia.EsExito ? latencia.Valor! : [];
+    }
+
+    private async Task RecibirAsync(ComprobacionEnVivo mensaje)
+    {
+        if (mensaje.MonitorId != Id)
+        {
+            return;
+        }
+
+        await InvokeAsync(async () =>
+        {
+            if (_monitor is null)
+            {
+                return;
+            }
+
+            _monitor = _monitor with
+            {
+                Estado = mensaje.Estado,
+                UltimaComprobacion = mensaje.Momento,
+                UltimaLatenciaMs = mensaje.Correcto ? mensaje.LatenciaMs : null,
+            };
+
+            // Abrir o cerrar un incidente cambia lo que hay que enseñar (causa, duración): se recarga todo.
+            if (mensaje.Incidente is not null)
+            {
+                _anuncio = mensaje.Incidente == "abierto" ? $"«{_monitor.Nombre}» está caído." : $"«{_monitor.Nombre}» se ha recuperado.";
+                await CargarAsync();
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task ProbarAsync()
+    {
+        _probando = true;
+        var respuesta = await Api.ProbarMonitorAsync(Id);
+        _probando = false;
+
+        if (Correcta(respuesta, out var error))
+        {
+            _prueba = respuesta.Valor;
+        }
+        else
+        {
+            _prueba = new PruebaDto(false, 0, "Otro", error ?? "No se pudo hacer la prueba.", new Dictionary<string, string>());
+        }
+    }
+
+    private async Task CambiarActivoAsync()
+    {
+        var respuesta = await Api.CambiarActivoAsync(Id, !_monitor!.Activo);
+
+        if (Correcta(respuesta, out var error))
+        {
+            await CargarAsync();
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private async Task BorrarAsync()
+    {
+        var respuesta = await Api.BorrarMonitorAsync(Id);
+
+        if (Correcta(respuesta, out var error))
+        {
+            Navegacion.NavigateTo("/");
+        }
+        else
+        {
+            _error = error;
+            _confirmarBorrado = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Vivo.Recibida -= RecibirAsync;
+        Vivo.Reconectada -= CargarAsync;
+        await Vivo.DisposeAsync();
+    }
+}

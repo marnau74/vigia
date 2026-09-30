@@ -1,0 +1,86 @@
+@page "/entrar"
+@layout Layout.PublicoLayout
+@attribute [AllowAnonymous]
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject IClienteDeApi Api
+@inject NavigationManager Navegacion
+
+<PageTitle>Entrar · Vigía</PageTitle>
+
+<section class="tarjeta entrada">
+    <h1>Vigía</h1>
+    <p class="nota">Entra con la contraseña del panel.</p>
+
+    <form method="post" @onsubmit="EnviarAsync" @formname="entrar" novalidate>
+        <AntiforgeryToken />
+
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+
+        <div class="campo">
+            <label for="contrasena">Contraseña</label>
+            <input id="contrasena" name="Modelo.Contrasena" type="password" autocomplete="current-password" required autofocus aria-describedby="@(_error is null ? null : "error-entrada")" />
+        </div>
+
+        <button type="submit" class="boton principal">Entrar</button>
+    </form>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? Contexto { get; set; }
+
+    [SupplyParameterFromForm]
+    public ModeloDeEntrada? Modelo { get; set; }
+
+    [SupplyParameterFromQuery(Name = "volver")]
+    public string? Volver { get; set; }
+
+    private string? _error;
+
+    private async Task EnviarAsync()
+    {
+        Modelo ??= new();
+
+        if (string.IsNullOrEmpty(Modelo.Contrasena))
+        {
+            _error = "Escribe la contraseña.";
+
+            return;
+        }
+
+        var respuesta = await Api.AccederAsync(Modelo.Contrasena);
+
+        if (!respuesta.EsExito || Contexto is null)
+        {
+            _error = respuesta.Error?.Mensaje ?? "No se pudo entrar.";
+
+            return;
+        }
+
+        var identidad = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "admin"), new Claim(ClienteDeApi.ClaimDelToken, respuesta.Valor!.Token)],
+            CookieAuthenticationDefaults.AuthenticationScheme);
+
+        // La cookie caduca con el token de la API: pasada la hora, se vuelve a entrar.
+        await Contexto.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identidad),
+            new AuthenticationProperties { ExpiresUtc = respuesta.Valor.ExpiraEn, IsPersistent = false, AllowRefresh = false });
+
+        Navegacion.NavigateTo(DestinoSeguro(Volver), forceLoad: true);
+    }
+
+    /// <summary>Solo se vuelve a una ruta de esta misma web: «//otra.web» o «/\otra.web» llevarían a otro sitio.</summary>
+    public static string DestinoSeguro(string? volver) =>
+        volver is { Length: > 0 } && volver[0] == '/' && (volver.Length == 1 || (volver[1] != '/' && volver[1] != '\\')) ? volver : "/";
+
+    public sealed class ModeloDeEntrada
+    {
+        public string? Contrasena { get; set; }
+    }
+}

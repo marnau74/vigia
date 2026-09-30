@@ -20,7 +20,7 @@ var mailpit = builder.AddContainer("mailpit", "axllent/mailpit")
 
 var smtp = mailpit.GetEndpoint("smtp");
 
-builder.AddProject<Projects.Vigia_Api>("api")
+var api = builder.AddProject<Projects.Vigia_Api>("api")
     .WithReference(baseDeDatos)
     .WaitFor(baseDeDatos)
     // Solo para desarrollo local: la contraseña de entrada al panel es «vigia-local». En producción el hash propio
@@ -35,6 +35,11 @@ builder.AddProject<Projects.Vigia_Worker>("worker")
     .WithEnvironment("Correo__Puerto", smtp.Property(EndpointProperty.Port))
     .WithEnvironment("Avisos__Destinatarios__0", "guardia@vigia.localhost")
     .WaitFor(mailpit)
+    .WithHttpHealthCheck("/health");
+
+builder.AddProject<Projects.Vigia_Web>("web")
+    .WithReference(api)
+    .WaitFor(api)
     .WithHttpHealthCheck("/health");
 
 builder.Build().Run();

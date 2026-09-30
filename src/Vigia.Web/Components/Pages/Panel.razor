@@ -1,0 +1,206 @@
+@page "/"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+@implements IAsyncDisposable
+@inject IConexionEnVivo Vivo
+
+<PageTitle>Panel · Vigía</PageTitle>
+
+<div class="barra-titulo">
+    <h1>Panel</h1>
+    <div class="acciones">
+        <span class="conexion @(_enVivo ? "activa" : "inactiva")" role="status">@(_enVivo ? "En vivo" : "Sin conexión en vivo")</span>
+        <a class="boton principal" href="monitores/nuevo">Nuevo monitor</a>
+    </div>
+</div>
+
+<div class="anuncio" role="status" aria-live="polite">@_anuncio</div>
+
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+@if (_monitores is null)
+{
+    <p class="nota" role="status">Cargando…</p>
+}
+else if (_monitores.Count == 0)
+{
+    <section class="tarjeta vacio">
+        <h2>Todavía no vigilas nada</h2>
+        <p>Crea el primer monitor para empezar a comprobar una web, un certificado, un DNS o un puerto.</p>
+        <a class="boton principal" href="monitores/nuevo">Crear el primer monitor</a>
+    </section>
+}
+else
+{
+    <ul class="resumen-panel" aria-label="Resumen">
+        <li><strong>@_monitores.Count(m => m.Activo && m.Estado is EstadoMonitor.Operativo)</strong> operativos</li>
+        <li><strong>@_monitores.Count(m => m.Activo && m.Estado is EstadoMonitor.Degradado or EstadoMonitor.Sospechoso)</strong> con problemas</li>
+        <li><strong>@_monitores.Count(m => m.Activo && m.Estado is EstadoMonitor.Caido)</strong> caídos</li>
+        <li><strong>@_monitores.Count(m => !m.Activo)</strong> en pausa</li>
+    </ul>
+
+    <div class="tabla-contenedor">
+        <table class="tabla tabla-tarjetas" role="table">
+            <caption class="oculto">Monitores</caption>
+            <thead>
+                <tr role="row">
+                    <th scope="col">Estado</th>
+                    <th scope="col">Monitor</th>
+                    <th scope="col">Última comprobación</th>
+                    <th scope="col">Latencia</th>
+                    <th scope="col">24 h</th>
+                    <th scope="col">Disponibilidad (30 días)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var monitor in _monitores)
+                {
+                    <tr class="@(monitor.Activo ? null : "pausado")" role="row">
+                        <td role="cell" data-etiqueta="Estado">
+                            @if (monitor.Activo)
+                            {
+                                <InsigniaDeEstado Estado="monitor.Estado" />
+                            }
+                            else
+                            {
+                                <span class="insignia desconocido"><span>En pausa</span></span>
+                            }
+                        </td>
+                        <th scope="row" role="rowheader">
+                            <a href="monitores/@monitor.Id">@monitor.Nombre</a>
+                            <span class="secundario">@Textos.Tipo(monitor.Tipo) · @Textos.Destino(monitor)</span>
+                        </th>
+                        <td role="cell" data-etiqueta="Última comprobación">@Formato.Hace(monitor.UltimaComprobacion, Reloj.GetUtcNow())</td>
+                        <td role="cell" data-etiqueta="Latencia">@Formato.Latencia(monitor.UltimaLatenciaMs)</td>
+                        <td role="cell" data-etiqueta="Últimas 24 h">
+                            <MiniGrafica Valores="Valores(monitor.Id)" />
+                        </td>
+                        <td role="cell" data-etiqueta="Disponibilidad (30 días)">@Formato.Porcentaje(monitor.Disponibilidad30Dias)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<MonitorDto>? _monitores;
+    private Dictionary<Guid, IReadOnlyList<PuntoDeLatencia>> _latencias = [];
+    private string? _error;
+    private string? _anuncio;
+    private bool _enVivo;
+    private CancellationTokenSource? _parada = new();
+    private PeriodicTimer? _reloj;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+
+        Vivo.Recibida += RecibirAsync;
+        Vivo.Reconectada += CargarAsync;
+        Vivo.EstadoCambiado += CambiarConexionAsync;
+        await Vivo.IniciarAsync(_parada!.Token);
+        _enVivo = Vivo.Conectada;
+
+        // «hace 3 min» envejece solo: se repinta cada 15 segundos aunque no llegue nada.
+        _reloj = new PeriodicTimer(TimeSpan.FromSeconds(15), Reloj);
+        _ = RepintarAsync(_reloj, _parada.Token);
+    }
+
+    private async Task CargarAsync()
+    {
+        var respuesta = await Api.MonitoresAsync();
+
+        if (!Correcta(respuesta, out var error))
+        {
+            _error = error;
+
+            return;
+        }
+
+        _error = null;
+        _monitores = [.. respuesta.Valor!];
+
+        var cargas = await Task.WhenAll(_monitores.Select(async m => (m.Id, Respuesta: await Api.LatenciaAsync(m.Id, 24))));
+        _latencias = cargas.Where(c => c.Respuesta.EsExito).ToDictionary(c => c.Id, c => c.Respuesta.Valor!);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private IReadOnlyList<double?> Valores(Guid id) =>
+        _latencias.TryGetValue(id, out var puntos) ? [.. puntos.Select(p => p.P50Ms)] : [];
+
+    private async Task RecibirAsync(ComprobacionEnVivo mensaje)
+    {
+        await InvokeAsync(() =>
+        {
+            var indice = _monitores?.FindIndex(m => m.Id == mensaje.MonitorId) ?? -1;
+
+            if (indice < 0)
+            {
+                return;
+            }
+
+            var anterior = _monitores![indice];
+            _monitores[indice] = anterior with
+            {
+                Estado = mensaje.Estado,
+                UltimaComprobacion = mensaje.Momento,
+                UltimaLatenciaMs = mensaje.Correcto ? mensaje.LatenciaMs : null,
+                EstadoDesde = mensaje.Estado != anterior.Estado ? mensaje.Momento : anterior.EstadoDesde,
+            };
+
+            // Lo que cambia de verdad (una caída, una recuperación) se anuncia a los lectores de pantalla.
+            _anuncio = mensaje.Incidente switch
+            {
+                "abierto" => $"«{anterior.Nombre}» está caído.",
+                "cerrado" => $"«{anterior.Nombre}» se ha recuperado.",
+                _ => _anuncio,
+            };
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task CambiarConexionAsync(bool conectada)
+    {
+        _enVivo = conectada;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RepintarAsync(PeriodicTimer reloj, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // La página se cerró.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Vivo.Recibida -= RecibirAsync;
+        Vivo.Reconectada -= CargarAsync;
+        Vivo.EstadoCambiado -= CambiarConexionAsync;
+
+        if (_parada is not null)
+        {
+            await _parada.CancelAsync();
+            _parada.Dispose();
+            _parada = null;
+        }
+
+        _reloj?.Dispose();
+        await Vivo.DisposeAsync();
+    }
+}

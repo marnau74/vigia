@@ -1,0 +1,15 @@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="ruta">
+        <AuthorizeRouteView RouteData="ruta" DefaultLayout="typeof(Layout.PanelLayout)">
+            <NotAuthorized>
+                <RedirigirAEntrar />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="ruta" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(Layout.PublicoLayout)">
+            <NoEncontrado />
+        </LayoutView>
+    </NotFound>
+</Router>

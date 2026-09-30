@@ -1,0 +1,176 @@
+@page "/mantenimientos"
+@attribute [Authorize]
+@rendermode Modos.Interactivo
+@inherits PaginaDelPanel
+
+<PageTitle>Mantenimiento · Vigía</PageTitle>
+
+<h1>Mantenimiento</h1>
+<p class="nota">Durante una ventana de mantenimiento los monitores elegidos no avisan ni cuentan en la disponibilidad: un reinicio planificado no debe parecer una caída. Las horas son UTC.</p>
+
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+@if (_ventanas is null)
+{
+    <p class="nota" role="status">Cargando…</p>
+}
+else if (_ventanas.Count == 0)
+{
+    <p class="nota">No hay ventanas de mantenimiento en curso ni programadas.</p>
+}
+else
+{
+    <div class="tabla-contenedor">
+        <table class="tabla">
+            <caption class="oculto">Ventanas de mantenimiento vigentes</caption>
+            <thead><tr><th scope="col">Motivo</th><th scope="col">Desde</th><th scope="col">Hasta</th><th scope="col">Monitores</th><th scope="col"><span class="oculto">Acciones</span></th></tr></thead>
+            <tbody>
+                @foreach (var ventana in _ventanas)
+                {
+                    <tr>
+                        <th scope="row">@ventana.Motivo</th>
+                        <td>@Formato.Fecha(ventana.Inicio)</td>
+                        <td>@Formato.Fecha(ventana.Fin)</td>
+                        <td>@string.Join(", ", ventana.MonitorIds.Select(Nombre))</td>
+                        <td><button type="button" class="boton pequeno" aria-label="Cancelar el mantenimiento @ventana.Motivo" @onclick="() => CancelarAsync(ventana.Id)">Cancelar</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<section class="tarjeta" aria-labelledby="nueva-ventana">
+    <h2 id="nueva-ventana">Nueva ventana</h2>
+
+    @if (_monitores.Count == 0)
+    {
+        <p class="nota">Crea primero algún monitor.</p>
+    }
+    else
+    {
+        <EditForm Model="_nueva" OnValidSubmit="CrearAsync" FormName="mantenimiento" class="formulario">
+            <div class="campo">
+                <label for="motivo">Motivo</label>
+                <InputText id="motivo" @bind-Value="_nueva.Motivo" maxlength="200" required />
+            </div>
+            <div class="campo">
+                <label for="inicio">Desde (UTC)</label>
+                <InputDate id="inicio" Type="InputDateType.DateTimeLocal" @bind-Value="_nueva.Inicio" required />
+            </div>
+            <div class="campo">
+                <label for="fin">Hasta (UTC)</label>
+                <InputDate id="fin" Type="InputDateType.DateTimeLocal" @bind-Value="_nueva.Fin" required />
+            </div>
+            <fieldset>
+                <legend>Monitores afectados</legend>
+                @foreach (var monitor in _monitores)
+                {
+                    <div class="campo casilla">
+                        <input type="checkbox" id="m-@monitor.Id" checked="@_nueva.Elegidos.Contains(monitor.Id)" @onchange="e => Alternar(monitor.Id, e.Value is true)" />
+                        <label for="m-@monitor.Id">@monitor.Nombre</label>
+                    </div>
+                }
+            </fieldset>
+            <button type="submit" class="boton principal">Programar mantenimiento</button>
+        </EditForm>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<MantenimientoDto>? _ventanas;
+    private IReadOnlyList<MonitorDto> _monitores = [];
+    private NuevaVentana _nueva = new();
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nueva = new NuevaVentana { Inicio = Reloj.GetUtcNow().UtcDateTime, Fin = Reloj.GetUtcNow().UtcDateTime.AddHours(1) };
+
+        var monitores = await Api.MonitoresAsync();
+
+        if (Correcta(monitores, out _))
+        {
+            _monitores = monitores.Valor!;
+        }
+
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        var respuesta = await Api.MantenimientosAsync();
+
+        if (Correcta(respuesta, out var error))
+        {
+            _ventanas = respuesta.Valor;
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private string Nombre(Guid id) => _monitores.FirstOrDefault(m => m.Id == id)?.Nombre ?? "(borrado)";
+
+    private void Alternar(Guid id, bool elegido)
+    {
+        if (elegido)
+        {
+            _nueva.Elegidos.Add(id);
+        }
+        else
+        {
+            _nueva.Elegidos.Remove(id);
+        }
+    }
+
+    private async Task CrearAsync()
+    {
+        _error = null;
+        var respuesta = await Api.CrearMantenimientoAsync(new CuerpoMantenimiento(
+            [.. _nueva.Elegidos],
+            new DateTimeOffset(DateTime.SpecifyKind(_nueva.Inicio, DateTimeKind.Utc)),
+            new DateTimeOffset(DateTime.SpecifyKind(_nueva.Fin, DateTimeKind.Utc)),
+            _nueva.Motivo.Trim()));
+
+        if (Correcta(respuesta, out var error))
+        {
+            _nueva.Motivo = string.Empty;
+            _nueva.Elegidos.Clear();
+            await CargarAsync();
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private async Task CancelarAsync(Guid id)
+    {
+        var respuesta = await Api.BorrarMantenimientoAsync(id);
+
+        if (Correcta(respuesta, out var error))
+        {
+            await CargarAsync();
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private sealed class NuevaVentana
+    {
+        public string Motivo { get; set; } = string.Empty;
+
+        public DateTime Inicio { get; set; }
+
+        public DateTime Fin { get; set; }
+
+        public HashSet<Guid> Elegidos { get; } = [];
+    }
+}
