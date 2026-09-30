@@ -7,10 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Vigia.Comprobaciones\Vigia.Comprobaciones.csproj" />
     <ProjectReference Include="..\Vigia.Datos\Vigia.Datos.csproj" />
     <ProjectReference Include="..\Vigia.ServiceDefaults\Vigia.ServiceDefaults.csproj" />
   </ItemGroup>

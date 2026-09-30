@@ -68,13 +68,22 @@ public sealed class MetricasVigia : IDisposable
     public void Dispose() => _medidor.Dispose();
 }
 
-/// <summary>Lo que ocurre tras guardar una comprobación (fase 4: avisos). El fallo de un manejador no afecta a las comprobaciones.</summary>
+/// <summary>Lo que se sabe de una comprobación ya guardada, para quien quiera reaccionar (el panel en tiempo real).</summary>
+public sealed record ComprobacionRegistrada(
+    Guid MonitorId,
+    DateTimeOffset Momento,
+    bool Correcto,
+    TimeSpan Latencia,
+    Vigia.Dominio.Monitores.EstadoMonitor Estado,
+    IReadOnlyList<Vigia.Dominio.Seguimiento.EventoDeSeguimiento> Eventos);
+
+/// <summary>Se invoca tras guardar cada comprobación. Su fallo se registra pero no invalida la comprobación ya guardada.</summary>
 public interface IManejadorDeEventos
 {
-    Task ManejarAsync(IReadOnlyList<Vigia.Dominio.Seguimiento.EventoDeSeguimiento> eventos, CancellationToken cancellationToken);
+    Task ManejarAsync(ComprobacionRegistrada comprobacion, CancellationToken cancellationToken);
 }
 
 internal sealed class ManejadorDeEventosVacio : IManejadorDeEventos
 {
-    public Task ManejarAsync(IReadOnlyList<Vigia.Dominio.Seguimiento.EventoDeSeguimiento> eventos, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task ManejarAsync(ComprobacionRegistrada comprobacion, CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -39,18 +39,24 @@ public sealed class ConversorConfiguracion()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(texto);
 
-        var nodo = JsonNode.Parse(texto)!.AsObject();
-        var tipo = Enum.Parse<TipoMonitor>(nodo["tipo"]!.GetValue<string>());
+        var nodo = JsonNode.Parse(texto) as JsonObject ?? throw new JsonException("La configuración debe ser un objeto JSON.");
+
+        var nombreDelTipo = nodo["tipo"] is JsonValue valor && valor.TryGetValue<string>(out var texto2) ? texto2 : null;
+
+        if (!Enum.TryParse<TipoMonitor>(nombreDelTipo, ignoreCase: true, out var tipo) || !Enum.IsDefined(tipo))
+        {
+            throw new JsonException($"Tipo de monitor desconocido o ausente: «{nombreDelTipo}».");
+        }
 
         return tipo switch
         {
-            TipoMonitor.Http => nodo.Deserialize<ConfiguracionHttp>(Opciones)!,
-            TipoMonitor.Tls => nodo.Deserialize<ConfiguracionTls>(Opciones)!,
-            TipoMonitor.Dns => nodo.Deserialize<ConfiguracionDns>(Opciones)!,
-            TipoMonitor.Tcp => nodo.Deserialize<ConfiguracionTcp>(Opciones)!,
-            TipoMonitor.Icmp => nodo.Deserialize<ConfiguracionIcmp>(Opciones)!,
-            _ => throw new JsonException($"Tipo de monitor desconocido en la base de datos: {tipo}."),
-        };
+            TipoMonitor.Http => (ConfiguracionMonitor?)nodo.Deserialize<ConfiguracionHttp>(Opciones),
+            TipoMonitor.Tls => (ConfiguracionMonitor?)nodo.Deserialize<ConfiguracionTls>(Opciones),
+            TipoMonitor.Dns => (ConfiguracionMonitor?)nodo.Deserialize<ConfiguracionDns>(Opciones),
+            TipoMonitor.Tcp => (ConfiguracionMonitor?)nodo.Deserialize<ConfiguracionTcp>(Opciones),
+            TipoMonitor.Icmp => (ConfiguracionMonitor?)nodo.Deserialize<ConfiguracionIcmp>(Opciones),
+            _ => throw new JsonException($"Tipo de monitor desconocido: {tipo}."),
+        } ?? throw new JsonException("La configuración está vacía.");
     }
 
     private static JsonSerializerOptions CrearOpciones()

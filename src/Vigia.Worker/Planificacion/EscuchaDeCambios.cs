@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-using Npgsql;
+using Vigia.Datos.Persistencia;
 
 namespace Vigia.Worker.Planificacion;
 
@@ -14,49 +14,17 @@ namespace Vigia.Worker.Planificacion;
 /// </summary>
 public sealed class EscuchaDeCambios(string cadenaDeConexion, Planificador planificador, TimeProvider reloj, ILogger<EscuchaDeCambios> log) : BackgroundService
 {
-    public const string Canal = "monitores_cambiados";
+    public const string Canal = Notificaciones.CambioDeMonitores;
 
-    public static readonly TimeSpan EsperaTrasFallo = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan EsperaTrasFallo = EscuchaDeNotificaciones.EsperaTrasFallo;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await using var conexion = new NpgsqlConnection(cadenaDeConexion);
-                await conexion.OpenAsync(stoppingToken);
-                conexion.Notification += (_, _) => planificador.Recargar();
-
-                await using (var orden = new NpgsqlCommand($"LISTEN {Canal}", conexion))
-                {
-                    await orden.ExecuteNonQueryAsync(stoppingToken);
-                }
-
-                planificador.Recargar();
-
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    await conexion.WaitAsync(stoppingToken);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception excepcion)
-            {
-                log.EscuchaPerdida(excepcion, EsperaTrasFallo.TotalSeconds);
-
-                try
-                {
-                    await Task.Delay(EsperaTrasFallo, reloj, stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-            }
-        }
-    }
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        EscuchaDeNotificaciones.EscucharAsync(
+            cadenaDeConexion,
+            Canal,
+            alRecibir: _ => planificador.Recargar(),
+            alConectar: planificador.Recargar,
+            alFallar: excepcion => log.EscuchaPerdida(excepcion, EsperaTrasFallo.TotalSeconds),
+            reloj,
+            stoppingToken);
 }

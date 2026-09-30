@@ -99,9 +99,13 @@ public sealed class RegistroDeEventos : IManejadorDeEventos
 
     public bool Fallar { get; set; }
 
-    public Task ManejarAsync(IReadOnlyList<EventoDeSeguimiento> eventos, CancellationToken cancellationToken)
+    public ConcurrentQueue<ComprobacionRegistrada> Comprobaciones { get; } = new();
+
+    public Task ManejarAsync(ComprobacionRegistrada comprobacion, CancellationToken cancellationToken)
     {
-        foreach (var evento in eventos)
+        Comprobaciones.Enqueue(comprobacion);
+
+        foreach (var evento in comprobacion.Eventos)
         {
             Eventos.Enqueue(evento);
         }
