@@ -25,6 +25,8 @@
     <ProjectReference Include="..\..\src\Vigia.Comprobaciones\Vigia.Comprobaciones.csproj" />
     <ProjectReference Include="..\..\src\Vigia.Datos\Vigia.Datos.csproj" />
     <ProjectReference Include="..\..\src\Vigia.Api\Vigia.Api.csproj" />
+    <ProjectReference Include="..\..\src\Vigia.Contratos\Vigia.Contratos.csproj" />
+    <ProjectReference Include="..\..\src\Vigia.Web\Vigia.Web.csproj" />
     <ProjectReference Include="..\..\src\Vigia.Worker\Vigia.Worker.csproj" />
   </ItemGroup>
 
