@@ -12,3 +12,4 @@ que se pierde al elegir.
 | [0005](0005-avisos-con-bandeja-de-salida.md) | Avisos por correo y Telegram con bandeja de salida | Aceptada |
 | [0006](0006-api-acceso-y-tiempo-real.md) | API: acceso con una contraseña, página pública mínima y tiempo real por PostgreSQL | Aceptada |
 | [0007](0007-panel-blazor.md) | Panel y página de estado en Blazor: SSR público, panel interactivo, sesión y accesibilidad | Aceptada |
+| [0008](0008-produccion-con-compose.md) | Producción en un VPS con Docker Compose y Caddy | Aceptada |

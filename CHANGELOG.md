@@ -78,6 +78,14 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
 - **Accesibilidad:** el estado siempre con palabra y forma (y las caídas con trama), gráficas en SVG propio
   con descripción y tabla de datos, etiquetas y ayudas enlazadas en los formularios, anuncios para lectores
   de pantalla, claro y oscuro, móvil sin desplazamiento horizontal.
+- **Producción en un VPS** (ADR 0008, guía en `docs/despliegue.md`): tres imágenes sin root (API, web y worker), un `docker-compose`
+  con PostgreSQL, el worker, la API, la web y Caddy (HTTPS automático, también sin dominio propio con `sslip.io`), donde solo Caddy se
+  ve desde internet y la API no se expone; cabeceras de seguridad con una política CSP estricta; un playbook de Ansible que deja
+  un servidor vacío listo (actualizaciones, cortafuegos, fail2ban, SSH solo con clave); copias de seguridad diarias verificadas con rotación y una
+  restauración de prueba semanal; y flujos de GitHub Actions para publicar las imágenes por versión, desplegar por SSH (desactivado hasta
+  que se pida) y vigilar desde fuera que la página de estado responde.
+- **Detrás de un proxy:** cookie de sesión `Secure`, claves de cifrado en un volumen (sin ellas cada reinicio cerraba las sesiones) y la
+  IP real del cliente reenviada a la API en entrar y en la página pública, para que el límite de peticiones sea por persona y no de todos a la vez.
 - **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
   tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
   redondeado hacia arriba; percentiles p50 y p95 de la latencia.
