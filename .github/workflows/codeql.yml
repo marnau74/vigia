@@ -1,0 +1,35 @@
+name: codeql
+
+# Análisis estático de seguridad de GitHub. Busca inyecciones, fallos de autenticación, uso
+# inseguro de criptografía y similares en el código C#. Los resultados salen en la pestaña Security.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Cada lunes: aparecen reglas nuevas aunque el código no cambie.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: manual
+          queries: security-extended
+      - name: Compilar
+        run: dotnet build Vigia.slnx -c Release
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:csharp"

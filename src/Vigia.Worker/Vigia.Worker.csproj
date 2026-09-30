@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vigia.Comprobaciones\Vigia.Comprobaciones.csproj" />
+    <ProjectReference Include="..\Vigia.Datos\Vigia.Datos.csproj" />
+    <ProjectReference Include="..\Vigia.ServiceDefaults\Vigia.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

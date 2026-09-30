@@ -1,0 +1,13 @@
+<Project>
+  <!-- Normas comunes a todos los proyectos de la solución. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <Authors>Mario Arnau</Authors>
+    <Product>Vigia</Product>
+  </PropertyGroup>
+</Project>

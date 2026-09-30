@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Sin rutas locales ni correos personales
+        run: |
+          if git grep -nIiE '([a-z]:[\/]+users[\/]|/home/[a-z0-9_-]+/|@(gmail|hotmail|outlook|yahoo)\.)'; then
+            echo "Hay datos personales en el repositorio" && exit 1
+          fi
+      - name: Restaurar
+        run: dotnet restore Vigia.slnx
+      - name: Formato
+        run: dotnet format Vigia.slnx --verify-no-changes --no-restore --exclude src/Vigia.Datos/Migraciones
+      - name: Compilar (avisos como errores)
+        run: dotnet build Vigia.slnx --no-restore -c Release
+      # Cada proyecto de tests se ejecuta por separado: así falla en el proyecto concreto y el
+      # resultado no depende de cómo el SDK enlace con el ejecutor de pruebas.
+      # Los de integración usan Testcontainers (PostgreSQL y Mailpit): los runners de GitHub traen Docker.
+      - name: Tests
+        run: |
+          for proyecto in tests/*.Tests/; do
+            echo "::group::${proyecto}"
+            dotnet run --project "${proyecto}" --no-build -c Release || exit 1
+            echo "::endgroup::"
+          done
+
+  dependencias:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Paquetes con vulnerabilidades conocidas (incluidos los transitivos)
+        run: |
+          dotnet restore Vigia.slnx
+          dotnet list Vigia.slnx package --vulnerable --include-transitive 2>&1 | tee vulnerabilidades.txt
+          if grep -qE '^\s+>' vulnerabilidades.txt; then
+            echo "Hay paquetes vulnerables" && exit 1
+          fi
+      - name: Paquetes en desuso
+        run: dotnet list Vigia.slnx package --deprecated

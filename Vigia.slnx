@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vigia.Api/Vigia.Api.csproj" />
+    <Project Path="src/Vigia.AppHost/Vigia.AppHost.csproj" />
+    <Project Path="src/Vigia.Comprobaciones/Vigia.Comprobaciones.csproj" />
+    <Project Path="src/Vigia.Datos/Vigia.Datos.csproj" />
+    <Project Path="src/Vigia.Dominio/Vigia.Dominio.csproj" />
+    <Project Path="src/Vigia.ServiceDefaults/Vigia.ServiceDefaults.csproj" />
+    <Project Path="src/Vigia.Worker/Vigia.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vigia.Api.Tests/Vigia.Api.Tests.csproj" />
+    <Project Path="tests/Vigia.Arquitectura.Tests/Vigia.Arquitectura.Tests.csproj" />
+    <Project Path="tests/Vigia.Dominio.Tests/Vigia.Dominio.Tests.csproj" />
+  </Folder>
+</Solution>
