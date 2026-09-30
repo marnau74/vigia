@@ -1,0 +1,26 @@
+# Caddy: HTTPS automático (Let's Encrypt) y proxy inverso hacia la web. Es lo único expuesto a internet.
+#
+# DOMINIO puede ser un dominio propio (estado.ejemplo.com) o, si no tienes uno, una dirección «sslip.io» que apunta a tu
+# servidor: para la IP 203.0.113.7 es 203-0-113-7.sslip.io. En pruebas locales, «http://localhost» sirve sin HTTPS.
+{$DOMINIO} {
+	encode zstd gzip
+
+	# La salud es para Docker y el monitor: de fuera no hace falta y no cuesta nada esconderla.
+	@interno path /health /alive
+	respond @interno 404
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# Los WebSockets del panel (circuito de Blazor) pasan por aquí sin configuración extra.
+	reverse_proxy web:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

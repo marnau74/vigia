@@ -1,0 +1,9 @@
+# Para probar el despliegue completo en local, construyendo las imágenes desde el código en lugar de bajarlas:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  worker:
+    build: { context: .., target: worker }
+  api:
+    build: { context: .., target: api }
+  web:
+    build: { context: .., target: web }
