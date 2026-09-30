@@ -23,6 +23,9 @@ var smtp = mailpit.GetEndpoint("smtp");
 builder.AddProject<Projects.Vigia_Api>("api")
     .WithReference(baseDeDatos)
     .WaitFor(baseDeDatos)
+    // Solo para desarrollo local: la contraseña de entrada al panel es «vigia-local». En producción el hash propio
+    // se da por variable de entorno (se genera con «dotnet run --project src/Vigia.Api -- hash-contrasena»).
+    .WithEnvironment("Acceso__HashContrasena", "AQAAAAIAAYagAAAAEEsVmovHyQ428ScAENrj3uq02eonds5hxn805uexutDluTuV7rymmnYCEXgfGPs4EQ==")
     .WithHttpHealthCheck("/health");
 
 builder.AddProject<Projects.Vigia_Worker>("worker")

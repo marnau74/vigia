@@ -6,7 +6,7 @@ correo y Telegram. Tiene un panel en tiempo real y una página de estado públic
 
 > En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
 > comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
-> planificador del worker y los avisos por correo y Telegram. Faltan la API y el panel.
+> planificador del worker, los avisos por correo y Telegram y la API con tiempo real. Falta el panel.
 
 ## Cómo está pensado
 
@@ -115,6 +115,26 @@ Se configuran por variables de entorno (o el gestor de secretos; nunca en ficher
 Un canal solo se usa si está completo (destinatarios y servidor, o chats y token). En local, el entorno de
 Aspire manda los correos a Mailpit (<http://localhost:8026>).
 
+## La API
+
+Pensada para un único usuario que entra con una contraseña (`POST /api/acceso` devuelve un token de una hora);
+todo es privado salvo entrar y la página de estado pública, y un test recorre todos los endpoints para
+comprobarlo. Documentación interactiva en `/openapi/v1.json` (en desarrollo).
+
+| | |
+|---|---|
+| `/api/monitores` | Crear, listar (con estado, última latencia, disponibilidad a 30 días e incidente abierto), modificar, pausar, reanudar, borrar y probar ahora |
+| `/api/monitores/{id}/…` | `resultados`, `latencia` (media, p50 y p95 por hora), `disponibilidad` (24 h, 7, 30 y 90 días), `barras` (una por día) e `incidentes` |
+| `/api/grupos`, `/api/mantenimientos`, `/api/incidentes` | Grupos para las páginas de estado, ventanas de mantenimiento e incidentes de todo el sistema |
+| `/api/publico/estado/{grupo}` | La página de estado pública: sin sesión, sin direcciones ni mensajes de error, con caché de 30 s |
+| `/hubs/panel` | SignalR: cada comprobación que guarda el worker llega al panel sin recargar |
+
+La API y el worker no se llaman: se avisan por `LISTEN/NOTIFY` de PostgreSQL (la API al worker cuando cambia
+un monitor, y el worker a la API cuando guarda una comprobación). Las decisiones de seguridad y de diseño están
+en el [ADR 0006](docs/adr/0006-api-acceso-y-tiempo-real.md). Para entrar, el hash de la contraseña se genera
+con `dotnet run --project src/Vigia.Api -- hash-contrasena` y se da en `Acceso__HashContrasena`, junto con
+`Acceso__ClaveJwt` (32 caracteres o más); en el entorno local de Aspire la contraseña es `vigia-local`.
+
 ## Cómo ejecutarlo
 
 Requiere el SDK de .NET 10 y Docker.
@@ -140,8 +160,8 @@ src/
   Vigia.Api/              endpoints y tiempo real
   Vigia.AppHost/          entorno local con .NET Aspire
   Vigia.ServiceDefaults/  observabilidad, health checks y resiliencia
-tests/                    dominio, comprobaciones (con servidores reales en local), datos y worker
-                          (con PostgreSQL real en contenedor), arquitectura y API
+tests/                    dominio, comprobaciones (con servidores reales en local), datos, worker y API
+                          (con PostgreSQL real en contenedor), arquitectura
 ```
 
 ## Licencia

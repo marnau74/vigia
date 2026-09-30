@@ -54,6 +54,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
   impide dos avisos iguales, varias instancias no envían el mismo aviso y una caída simulada genera un
   único aviso de caída y otro de recuperación. El cierre por mantenimiento no avisa de recuperación. El
   token de Telegram nunca aparece en los errores.
+- **API** (ADR 0006): acceso con una contraseña (hash PBKDF2 en la configuración) y JWT de una hora con
+  límite contra la fuerza bruta; sesión exigida por defecto en todos los endpoints salvo los dos públicos
+  (un test lo comprueba recorriéndolos todos); CRUD de monitores y grupos, ventanas de mantenimiento,
+  «probar ahora», y el histórico (resultados, latencia por hora, disponibilidad a 24 h/7/30/90 días, barras
+  diarias e incidentes) leído de los agregados.
+- **Página de estado pública** (`/api/publico/estado/{slug}`) que solo enseña nombres, estado, disponibilidad
+  e incidentes: nunca direcciones, configuraciones ni mensajes de error; un grupo privado y uno inexistente
+  son indistinguibles.
+- **Tiempo real:** el worker avisa por `NOTIFY` de cada comprobación guardada y la API la reenvía por SignalR
+  al panel; la API avisa al worker de cada cambio de monitores en la misma transacción que lo guarda.
+- **Corregido:** los clientes HTTP de las comprobaciones recibían de ServiceDefaults un manejador de
+  resiliencia (reintentos y cortacircuitos) que falseaba la latencia y los fallos; ahora cada comprobación
+  es un único intento.
 - **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
   tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
   redondeado hacia arriba; percentiles p50 y p95 de la latencia.
