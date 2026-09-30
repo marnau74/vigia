@@ -4,9 +4,9 @@ Monitor de servicios e infraestructura, autoalojado. Vigila webs y servicios (di
 latencia, certificados TLS, DNS y puertos), guarda el histórico, abre incidentes y avisa por
 correo y Telegram. Tiene un panel en tiempo real y una página de estado pública.
 
-> En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire) y las
-> comprobaciones de red con su protección contra SSRF. Faltan el dominio de incidentes, el planificador,
-> los avisos, la API y el panel.
+> En construcción. Hechos: el esqueleto (solución por capas y entorno local con .NET Aspire), las
+> comprobaciones de red con su protección contra SSRF, la máquina de estados, la persistencia y el
+> planificador del worker. Faltan los avisos, la API y el panel.
 
 ## Cómo está pensado
 
@@ -80,6 +80,21 @@ El mantenimiento y el tiempo sin datos quedan fuera, y el porcentaje se trunca, 
 arriba (99,9996 % se enseña como 99,99 %, nunca como 100 %). Para 30 días, el 99,9 % permite 43
 minutos y 12 segundos de caída. Todo está razonado en el [ADR 0003](docs/adr/0003-maquina-de-estados-y-disponibilidad.md).
 
+## Los datos y el planificador
+
+Un monitor de un minuto genera 1.440 filas al día, y con cientos de monitores son cientos de millones al
+año. Por eso los resultados se guardan **en una tabla particionada por mes**: la retención (14 días de
+detalle) es un `DROP TABLE` instantáneo y no un `DELETE` de millones de filas, y las consultas por fecha
+solo leen el mes que necesitan. Encima hay agregados por hora (90 días) y por día (siempre) calculados con
+la misma definición de disponibilidad que el resto del programa.
+
+El planificador reparte las comprobaciones con una cola de prioridad: no solapa dos comprobaciones del mismo
+monitor, mantiene el ritmo sin hacer ráfagas, dispersa las primeras para que no se lancen todas a la vez y
+limita cuántas corren simultáneamente. Un fallo se repite una vez antes de contarlo, y los cambios de
+configuración le llegan al instante por `LISTEN/NOTIFY` de PostgreSQL. Se prueba con una simulación de 50
+monitores durante una hora en segundos, con reloj simulado. Todo en el
+[ADR 0004](docs/adr/0004-datos-particionados-y-planificador.md).
+
 ## Cómo ejecutarlo
 
 Requiere el SDK de .NET 10 y Docker.
@@ -105,7 +120,8 @@ src/
   Vigia.Api/              endpoints y tiempo real
   Vigia.AppHost/          entorno local con .NET Aspire
   Vigia.ServiceDefaults/  observabilidad, health checks y resiliencia
-tests/                    dominio, comprobaciones (con servidores reales en local), arquitectura y API
+tests/                    dominio, comprobaciones (con servidores reales en local), datos y worker
+                          (con PostgreSQL real en contenedor), arquitectura y API
 ```
 
 ## Licencia

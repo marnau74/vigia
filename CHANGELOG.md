@@ -35,6 +35,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
   aviso de caída y otro de recuperación por incidente, sin repeticiones; los fallos aislados no avisan;
   el mantenimiento no cuenta ni abre incidentes (ADR 0003). Se prueba con secuencias de resultados y
   con diez mil secuencias aleatorias contra un modelo de referencia.
+- **Persistencia** con EF Core y PostgreSQL: monitores, grupos, seguimiento, incidentes (un índice único
+  garantiza un solo incidente abierto por monitor), cambios de estado y ventanas de mantenimiento; la
+  configuración de cada tipo se guarda como JSON.
+- **Resultados particionados por mes** (ADR 0004): la retención de 14 días se cumple eliminando particiones
+  enteras (una de 200.000 filas en menos de 3 s), las consultas por fecha solo tocan el mes que necesitan
+  y un índice BRIN ocupa unos kilobytes. Las particiones se crean por adelantado.
+- **Agregados por hora y por día** calculados con el mismo dominio que la disponibilidad, idempotentes y
+  con latencias solo de comprobaciones correctas fuera de mantenimiento; se conservan 90 días por hora y
+  el histórico por día.
+- **Planificador del worker**: cola de prioridad sin solapes ni ráfagas, con reparto inicial, ritmo fijo y
+  concurrencia acotada; reintento inmediato antes de contar un fallo; recarga instantánea de cambios con
+  `LISTEN/NOTIFY`; agregación y retención de fondo; métricas OpenTelemetry (`Vigia`). Probado con una
+  simulación de 50 monitores durante una hora con reloj simulado.
 - **Cálculo de la disponibilidad** sobre el tiempo pasado en cada estado, con el mantenimiento y el
   tiempo desconocido fuera, sin datos en lugar de un 100 % inventado y con el porcentaje truncado, no
   redondeado hacia arriba; percentiles p50 y p95 de la latencia.
