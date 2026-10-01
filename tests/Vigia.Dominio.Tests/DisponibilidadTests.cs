@@ -85,6 +85,61 @@ public class TiemposPorEstadoTests
         a.GetHashCode().ShouldBe(b.GetHashCode());
         a.ShouldNotBe(TiemposPorEstado.Vacio);
     }
+
+    // --- Solo cuenta el tiempo vigilado ---------------------------------------------------------
+
+    private static IEnumerable<DateTimeOffset> CadaMinuto(int desdeMinutos, int hastaMinutos) =>
+        Enumerable.Range(desdeMinutos, hastaMinutos - desdeMinutos).Select(m => T0.AddMinutes(m));
+
+    [Fact]
+    public void Con_comprobaciones_continuas_el_tiempo_vigilado_es_el_de_los_tramos()
+    {
+        var tramos = new[] { Tramo(EstadoMonitor.Operativo, 0, 45), Tramo(EstadoMonitor.Caido, 45, 60) };
+
+        var vigilados = TiemposPorEstado.DeTramosVigilados(tramos, CadaMinuto(0, 60), TimeSpan.FromMinutes(3), T0, T0.AddHours(1));
+
+        vigilados.ShouldBe(TiemposPorEstado.DeTramos(tramos, T0, T0.AddHours(1)));
+    }
+
+    [Fact]
+    public void Sin_comprobaciones_el_ultimo_estado_no_se_alarga_y_cuenta_como_desconocido()
+    {
+        // Operativo toda la hora según los cambios, pero solo hubo comprobaciones los diez primeros minutos (se pausó).
+        var tiempos = TiemposPorEstado.DeTramosVigilados(
+            [Tramo(EstadoMonitor.Operativo, -60, 60)],
+            CadaMinuto(0, 10),
+            TimeSpan.FromMinutes(3),
+            T0,
+            T0.AddHours(1));
+
+        tiempos[EstadoMonitor.Operativo].ShouldBe(TimeSpan.FromMinutes(12), "la última, del minuto 9, vale hasta el 12");
+        tiempos.Desconocido.ShouldBe(TimeSpan.FromMinutes(48));
+        CalculadoraDisponibilidad.Calcular(tiempos)!.Value.Fraccion.ShouldBe(1m, "lo no vigilado no cuenta ni a favor ni en contra");
+    }
+
+    [Fact]
+    public void Un_estado_caido_sin_vigilar_tampoco_penaliza()
+    {
+        var tiempos = TiemposPorEstado.DeTramosVigilados([Tramo(EstadoMonitor.Caido, 0, 60)], [], TimeSpan.FromMinutes(3), T0, T0.AddHours(1));
+
+        tiempos.Caido.ShouldBe(TimeSpan.Zero);
+        tiempos.Desconocido.ShouldBe(TimeSpan.FromHours(1));
+        CalculadoraDisponibilidad.Calcular(tiempos).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Una_comprobacion_de_antes_del_periodo_cubre_su_principio_y_las_que_se_solapan_no_cuentan_dos_veces()
+    {
+        var tiempos = TiemposPorEstado.DeTramosVigilados(
+            [Tramo(EstadoMonitor.Operativo, -10, 60)],
+            [T0.AddMinutes(-1), T0.AddMinutes(30), T0.AddMinutes(31)],
+            TimeSpan.FromMinutes(3),
+            T0,
+            T0.AddHours(1));
+
+        tiempos[EstadoMonitor.Operativo].ShouldBe(TimeSpan.FromMinutes(2 + 4));
+        (tiempos[EstadoMonitor.Operativo] + tiempos.Desconocido).ShouldBe(TimeSpan.FromHours(1));
+    }
 }
 
 public class CalculadoraDisponibilidadTests

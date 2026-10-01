@@ -119,6 +119,12 @@ public sealed class Planificador(
             var monitores = await repositorio.ListarActivosAsync(cancellationToken);
             _ventanas = await repositorio.ListarVentanasVigentesAsync(ahora, cancellationToken);
             cola.Sincronizar(monitores, ahora);
+
+            // Un monitor pausado deja de vigilarse: su último estado no puede seguir contando como si se mirara.
+            foreach (var (id, vigencia) in await repositorio.ListarPausadosSinCerrarAsync(cancellationToken))
+            {
+                await ejecutor.DejarDeVigilarAsync(id, vigencia, cancellationToken);
+            }
         }
         catch (Exception excepcion) when (excepcion is not OperationCanceledException)
         {

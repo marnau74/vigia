@@ -31,6 +31,7 @@ cualquiera ─fallo→ Sospechoso ─OK→ Operativo
 Sospechoso ─N fallos seguidos→ Caído            (abre incidente y avisa, una vez)
 Caído ─OK→ Operativo o Degradado                (cierra el incidente y avisa, una vez)
 cualquiera ─ventana de mantenimiento→ Mantenimiento ─fin→ Desconocido
+cualquiera ─pausa, o hueco sin comprobaciones→ Desconocido   (cierra el incidente sin avisar)
 ```
 
 - **«Sospechoso» absorbe el ruido.** Hacen falta N fallos *seguidos* (por monitor, entre 1 y 10, 3 por
@@ -56,6 +57,21 @@ Una ventana de mantenimiento cubre a unos monitores durante `[inicio, fin)`. Dur
   se comprueba. Si sigue caído, se detecta por el camino normal (N fallos); si está sano, el primer éxito
   lo deja operativo sin ningún aviso. Volver a «operativo» a ciegas ocultaría un servicio que no volvió.
 
+### Cuando no se mira
+
+Un estado solo vale mientras lo respalda una comprobación. Cada una **vale tres intervalos** (con uno de 60 s,
+tres minutos): margen para el retraso normal del planificador y para perder una comprobación suelta. Pasado ese
+tiempo sin otra, no se sabe cómo está el servicio:
+
+- **Al pausar un monitor**, el worker lo pasa a «desconocido» y, si estaba caído, **cierra el incidente
+  «sin vigilancia»**, sin avisar: nadie ha visto que se recupere.
+- **Si el worker estuvo parado** (o el monitor se reanuda), la primera comprobación anota antes el hueco: el
+  monitor pasó a «desconocido» cuando venció la anterior. Si el servicio sigue caído, se abre otro incidente
+  por el camino normal y se avisa: Vigía no lo vio durante el hueco y vuelve a confirmarlo.
+- **La disponibilidad cuenta igual:** al agregar cada hora, el tiempo que no cubre ninguna comprobación es
+  «desconocido», aunque el último estado registrado fuera otro. Sin esto, un monitor pausado una semana con el
+  servicio en pie sumaba una semana de disponibilidad perfecta que nadie había medido.
+
 ### La disponibilidad
 
 ```
@@ -68,7 +84,7 @@ agregar por horas y por días sumando tiempos.
 
 - **El mantenimiento no cuenta ni a favor ni en contra.** Es tiempo planificado.
 - **El tiempo «desconocido» tampoco.** Contarlo como bueno sería inventarse un dato; contarlo como malo,
-  penalizar por no haber mirado.
+  penalizar por no haber mirado. Incluye el tiempo sin vigilar (arriba).
 - **«Sospechoso» y «degradado» cuentan como en pie.** Un fallo aislado no es una caída hasta que se
   confirma; cuando se confirma, el tiempo caído se cuenta desde que se abre el incidente.
 - **Sin datos, el resultado es «sin datos»**, no 100 %.

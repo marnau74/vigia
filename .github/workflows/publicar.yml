@@ -1,7 +1,7 @@
 name: publicar
 
-# En cada versión (un tag v1.2.3): construye las tres imágenes (amd64 y arm64), las sube a GitHub Container Registry y,
-# si está activado, despliega en el servidor. Para activar el despliegue hacen falta las variables y secretos de
+# En cada versión (un tag v1.2.3): pasa la CI completa y, solo si pasa, construye las tres imágenes (amd64 y arm64), las sube
+# a GitHub Container Registry y, si está activado, despliega en el servidor. Para activar el despliegue hacen falta las variables y secretos de
 # docs/despliegue.md (paso 7); sin ellos, el flujo solo publica las imágenes.
 on:
   push:
@@ -11,7 +11,11 @@ permissions:
   contents: read
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   imagenes:
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: read

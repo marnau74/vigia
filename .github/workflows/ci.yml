@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # La llama «publicar» antes de construir las imágenes: no se publica nada que no pase la CI.
+  workflow_call:
 
 permissions:
   contents: read

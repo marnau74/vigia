@@ -5,6 +5,23 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
 
 ## [Sin publicar]
 
+### Corregido
+- La disponibilidad contaba el tiempo sin vigilar como el último estado visto: un monitor pausado una semana, o
+  el worker parado unas horas, sumaban ese tiempo como «en pie» (o «caído»). Ahora cada comprobación vale tres
+  intervalos y el tiempo que no cubre ninguna es «desconocido», que no cuenta (ADR 0003).
+- Pausar un monitor caído dejaba su incidente abierto indefinidamente. Ahora el worker lo pasa a «desconocido»
+  y cierra el incidente «sin vigilancia», sin avisar de una recuperación que nadie ha visto. Lo mismo hace la
+  primera comprobación tras un hueco (por ejemplo, tras un reinicio largo del worker).
+- La palabra clave de un monitor HTTP no se encontraba si una letra de varios bytes (una «ñ», una tilde)
+  quedaba partida entre dos lecturas, ni en páginas que declaran otra codificación (Latin-1): ahora se
+  descodifica con estado y con el `charset` de la respuesta.
+- La copia fuera del servidor (`DESTINO_RSYNC`) replicaba los borrados: perder las copias locales borraba
+  también las de fuera. Ahora al destino solo se añaden copias.
+
+### Cambiado
+- `publicar` pasa la CI completa antes de construir y publicar las imágenes.
+- El `latido` viene desactivado hasta configurarlo (antes se lanzaba cada diez minutos sin hacer nada).
+
 ## [1.0.0] - 2026-09-30
 
 Primera versión completa.

@@ -13,7 +13,9 @@ namespace Vigia.Datos.Persistencia;
 /// <remarks>
 /// El tiempo pasado en cada estado sale del registro de cambios de estado, con el mismo código del dominio
 /// que se usa en los tests (<see cref="TiemposPorEstado"/>): no hay una segunda implementación en SQL que
-/// pueda dar otro resultado. Todo es idempotente: recalcular una hora da la misma fila.
+/// pueda dar otro resultado. Un estado solo cuenta mientras lo respalda alguna comprobación (cada una vale tres
+/// intervalos): el tiempo de un monitor pausado o de un worker parado es «desconocido», no el último estado visto.
+/// Todo es idempotente: recalcular una hora da la misma fila (mientras se conserven sus comprobaciones, 14 días).
 /// Las estadísticas de latencia se calculan solo sobre las comprobaciones correctas (un fallo por
 /// tiempo agotado «tarda» diez segundos y no dice nada sobre la velocidad del servicio) y quedan
 /// fuera las hechas durante un mantenimiento.
@@ -43,17 +45,18 @@ public sealed class Agregador(VigiaDbContext db)
         var inicio = InicioDeHora(hora);
         var fin = inicio.AddHours(1);
 
-        var monitores = await db.Monitores.AsNoTracking().Where(m => m.CreadoEn < fin).Select(m => m.Id).ToListAsync(cancellationToken);
+        var monitores = await db.Monitores.AsNoTracking().Where(m => m.CreadoEn < fin).Select(m => new { m.Id, m.Intervalo }).ToListAsync(cancellationToken);
 
-        foreach (var monitorId in monitores)
+        foreach (var monitor in monitores)
         {
-            await AgregarHoraDeAsync(monitorId, inicio, fin, cancellationToken);
+            await AgregarHoraDeAsync(monitor.Id, monitor.Intervalo * Dominio.Monitores.Monitor.ComprobacionesToleradas, inicio, fin, cancellationToken);
         }
 
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task AgregarHoraDeAsync(Guid monitorId, DateTimeOffset inicio, DateTimeOffset fin, CancellationToken cancellationToken)
+    /// <param name="vigencia">Cuánto vale cada comprobación (<see cref="Dominio.Monitores.Monitor.VigenciaDeUnaComprobacion"/>).</param>
+    private async Task AgregarHoraDeAsync(Guid monitorId, TimeSpan vigencia, DateTimeOffset inicio, DateTimeOffset fin, CancellationToken cancellationToken)
     {
         // Estado al empezar la hora: el del último cambio anterior (o desconocido si no hubo ninguno).
         var estadoInicial = await db.CambiosDeEstado
@@ -71,12 +74,17 @@ public sealed class Agregador(VigiaDbContext db)
         var cambios = new List<(EstadoMonitor Estado, DateTimeOffset Desde)> { (estadoInicial, inicio) };
         cambios.AddRange(cambiosDentro.Select(c => (c.Nuevo, c.Momento)));
 
-        var tiempos = TiemposPorEstado.DeTramos(TiemposPorEstado.TramosDe(cambios, fin), inicio, fin);
-
-        var resultados = await db.Resultados.AsNoTracking()
-            .Where(r => r.MonitorId == monitorId && r.Momento >= inicio && r.Momento < fin)
-            .Select(r => new { r.Correcto, r.LatenciaMs, r.EnMantenimiento })
+        // Una comprobación de antes de la hora todavía cubre su principio, si no ha vencido.
+        var desdeVigentes = inicio - vigencia;
+        var conVigentes = await db.Resultados.AsNoTracking()
+            .Where(r => r.MonitorId == monitorId && r.Momento >= desdeVigentes && r.Momento < fin)
+            .Select(r => new { r.Momento, r.Correcto, r.LatenciaMs, r.EnMantenimiento })
             .ToListAsync(cancellationToken);
+
+        // El estado solo cuenta mientras alguna comprobación lo respalda: lo demás es tiempo sin vigilar (desconocido).
+        var tiempos = TiemposPorEstado.DeTramosVigilados(TiemposPorEstado.TramosDe(cambios, fin), conVigentes.Select(r => r.Momento), vigencia, inicio, fin);
+
+        var resultados = conVigentes.Where(r => r.Momento >= inicio).ToList();
 
         var contadas = resultados.Where(r => !r.EnMantenimiento).ToList();
         var latencias = contadas.Where(r => r.Correcto).Select(r => TimeSpan.FromMilliseconds(r.LatenciaMs)).ToList();

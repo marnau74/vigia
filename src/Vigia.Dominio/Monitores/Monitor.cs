@@ -88,6 +88,16 @@ public sealed class Monitor
 
     public TipoMonitor Tipo => Configuracion.Tipo;
 
+    /// <summary>Comprobaciones que se pueden perder seguidas sin dejar de saber cómo está el servicio.</summary>
+    public const int ComprobacionesToleradas = 3;
+
+    /// <summary>
+    /// Cuánto vale una comprobación: tres intervalos. Si en ese tiempo no llega otra (el monitor se pausó o el worker
+    /// estuvo parado), no se sabe cómo está el servicio y ese tiempo cuenta como «desconocido», no como el último estado
+    /// visto. Tres y no uno para que el retraso normal del planificador o una comprobación perdida no abran huecos.
+    /// </summary>
+    public TimeSpan VigenciaDeUnaComprobacion => Intervalo * ComprobacionesToleradas;
+
     public static Resultado<Monitor> Crear(
         string nombre,
         ConfiguracionMonitor configuracion,

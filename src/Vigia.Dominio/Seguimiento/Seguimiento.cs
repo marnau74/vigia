@@ -21,6 +21,12 @@ public enum MotivoDeCierre
 
     /// <summary>Empezó una ventana de mantenimiento: el tiempo que sigue no cuenta y no se avisa.</summary>
     Mantenimiento = 2,
+
+    /// <summary>
+    /// Se dejó de vigilar el monitor (se pausó, o el worker estuvo parado más de lo que vale una comprobación):
+    /// desde entonces no se sabe cómo está el servicio. No se avisa, porque nadie ha visto que se recupere.
+    /// </summary>
+    SinVigilancia = 3,
 }
 
 /// <summary>Un periodo en el que un servicio estuvo caído, de principio a fin.</summary>
@@ -103,12 +109,16 @@ public sealed record IncidenteCerrado(Guid MonitorId, Incidente Incidente, Motiv
 /// <summary>Cómo se interpreta una comprobación de un monitor.</summary>
 /// <param name="FallosParaIncidente">Fallos seguidos que hacen falta para dar el servicio por caído.</param>
 /// <param name="UmbralLento">Por encima de esta latencia, un éxito cuenta como «degradado». Sin valor, nunca.</param>
-public sealed record ReglasDeSeguimiento(int FallosParaIncidente, TimeSpan? UmbralLento)
+/// <param name="Vigencia">
+/// Cuánto vale una comprobación (<see cref="Monitores.Monitor.VigenciaDeUnaComprobacion"/>). Si la siguiente llega más tarde,
+/// el hueco se cuenta como «desconocido». Sin valor, no se miran los huecos.
+/// </param>
+public sealed record ReglasDeSeguimiento(int FallosParaIncidente, TimeSpan? UmbralLento, TimeSpan? Vigencia = null)
 {
     public static ReglasDeSeguimiento De(Monitores.Monitor monitor)
     {
         ArgumentNullException.ThrowIfNull(monitor);
 
-        return new ReglasDeSeguimiento(monitor.FallosParaIncidente, monitor.UmbralLento);
+        return new ReglasDeSeguimiento(monitor.FallosParaIncidente, monitor.UmbralLento, monitor.VigenciaDeUnaComprobacion);
     }
 }

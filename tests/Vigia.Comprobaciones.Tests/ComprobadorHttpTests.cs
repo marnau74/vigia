@@ -191,6 +191,37 @@ public class ComprobadorHttpTests : IDisposable
         (await Comprobar(Local(servidor.Puerto) with { PalabraClave = "palabra" })).Correcto.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task Una_letra_de_varios_bytes_partida_entre_dos_lecturas_no_se_pierde()
+    {
+        // «ñ» en UTF-8 son dos bytes (C3 B1): el servidor envía el primero, espera y envía el segundo, así que llegan
+        // en lecturas distintas. Descodificar cada lectura por separado convertía la «ñ» en dos caracteres basura.
+        var utf8 = System.Text.Encoding.UTF8.GetBytes("Bienvenido a España");
+        var corte = Array.IndexOf(utf8, (byte)0xC3) + 1;
+
+        await using var servidor = await ServidorWeb.IniciarAsync(app => app.MapGet("/", async (HttpContext contexto) =>
+        {
+            contexto.Response.ContentType = "text/html; charset=utf-8";
+            await contexto.Response.Body.WriteAsync(utf8.AsMemory(0, corte));
+            await contexto.Response.Body.FlushAsync();
+            await Task.Delay(200);
+            await contexto.Response.Body.WriteAsync(utf8.AsMemory(corte));
+        }));
+
+        (await Comprobar(Local(servidor.Puerto) with { PalabraClave = "España" })).Correcto.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task La_palabra_se_busca_con_la_codificacion_que_declara_la_respuesta()
+    {
+        // Una página antigua en Latin-1: la «ñ» es un solo byte (F1), que en UTF-8 no significa nada.
+        var latin1 = System.Text.Encoding.Latin1.GetBytes("Bienvenido a España");
+
+        await using var servidor = await ServidorWeb.IniciarAsync(app => app.MapGet("/", () => Results.Bytes(latin1, "text/html; charset=iso-8859-1")));
+
+        (await Comprobar(Local(servidor.Puerto) with { PalabraClave = "España" })).Correcto.ShouldBeTrue();
+    }
+
     // --- Redirecciones -----------------------------------------------------------------------
 
     [Fact]

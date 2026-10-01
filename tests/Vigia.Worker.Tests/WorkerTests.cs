@@ -607,6 +607,69 @@ public class WorkerTests : BaseWorkerTest
     }
 
     [Fact]
+    public async Task Pausar_un_monitor_caido_lo_deja_en_desconocido_y_cierra_el_incidente_sin_avisar()
+    {
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
+        await GuardarAsync(1);
+        entorno.Comprobador.Respuesta = (_, _) => Fallo();
+        await entorno.Planificador.StartAsync(Cancelacion);
+        await EsperarAsync(() => entorno.Cola.Cantidad == 1);
+
+        try
+        {
+            for (var paso = 0; paso < 30; paso++)
+            {
+                await entorno.AvanzarYEsperarAsync(TimeSpan.FromSeconds(10));
+            }
+
+            await using (var db = entorno.NuevoContexto())
+            {
+                (await db.Incidentes.SingleAsync(Cancelacion)).EstaAbierto.ShouldBeTrue("tres fallos seguidos: caído");
+                var guardado = await db.Monitores.SingleAsync(Cancelacion);
+                guardado.Pausar();
+                await db.SaveChangesAsync(Cancelacion);
+            }
+
+            entorno.Planificador.Recargar();
+            await EsperarAsync(() => entorno.Cola.Cantidad == 0);
+            await EsperarAsync(() =>
+            {
+                using var db = entorno.NuevoContexto();
+                return db.Seguimientos.Single().Estado == EstadoMonitor.Desconocido;
+            });
+        }
+        finally
+        {
+            await entorno.Planificador.StopAsync(CancellationToken.None);
+        }
+
+        await using var lectura = entorno.NuevoContexto();
+        var incidente = await lectura.Incidentes.SingleAsync(Cancelacion);
+        incidente.EstaAbierto.ShouldBeFalse();
+        incidente.CerradoPor.ShouldBe(MotivoDeCierre.SinVigilancia);
+        (await lectura.Seguimientos.SingleAsync(Cancelacion)).IncidenteAbiertoId.ShouldBeNull();
+        (await lectura.Avisos.CountAsync(a => a.Tipo == TipoAviso.Recuperacion, Cancelacion)).ShouldBe(0, "nadie ha visto que se recuperase");
+        (await lectura.CambiosDeEstado.OrderByDescending(c => c.Momento).FirstAsync(Cancelacion)).Nuevo.ShouldBe(EstadoMonitor.Desconocido);
+    }
+
+    [Fact]
+    public async Task Tras_un_hueco_sin_comprobaciones_el_tiempo_perdido_es_desconocido_y_no_el_ultimo_estado()
+    {
+        // El worker estuvo parado una hora: al volver, el primer resultado anota el hueco desde que venció el anterior.
+        await using var entorno = new EntornoDeWorker(Cadena, Inicio);
+        var monitor = await GuardarAsync(1);
+
+        await entorno.Ejecutor.EjecutarAsync(monitor, [], Cancelacion);
+        entorno.Reloj.Advance(TimeSpan.FromHours(1));
+        await entorno.Ejecutor.EjecutarAsync(monitor, [], Cancelacion);
+
+        await using var db = entorno.NuevoContexto();
+        var cambios = await db.CambiosDeEstado.OrderBy(c => c.Momento).ToListAsync(Cancelacion);
+        cambios.Select(c => c.Nuevo).ShouldBe([EstadoMonitor.Operativo, EstadoMonitor.Desconocido, EstadoMonitor.Operativo]);
+        cambios[1].Momento.ShouldBe(Inicio + monitor.VigenciaDeUnaComprobacion);
+    }
+
+    [Fact]
     public async Task Un_aviso_de_postgres_hace_que_el_worker_conozca_un_monitor_nuevo()
     {
         await using var entorno = new EntornoDeWorker(Cadena, Inicio);

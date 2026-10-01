@@ -60,13 +60,15 @@ explícitamente** (variable `DESPLEGAR`), las despliega por SSH con la huella de
 
 Un volcado comprimido cada noche, **verificado** antes de darlo por bueno y con rotación de 14 días; y **una restauración de prueba
 cada semana** en una base temporal, porque una copia que nunca se ha restaurado no se sabe si sirve. Las copias en el mismo servidor no
-protegen de perderlo, así que hay un destino `rsync` opcional para sacarlas fuera. Restaurar es un script que para la aplicación,
+protegen de perderlo, así que hay un destino `rsync` opcional para sacarlas fuera, al que solo se añaden copias: replicar también los
+borrados haría que perder las copias locales borrase las de fuera. Restaurar es un script que para la aplicación,
 sustituye la base de datos y la arranca.
 
 ### El monitor se vigila a sí mismo
 
 Un flujo programado de GitHub Actions comprueba desde fuera cada diez minutos que la página de estado responde y, si no, falla y GitHub
-avisa por correo. Es lo único que detecta que se ha caído el propio Vigía (un monitor no puede avisar de su propia caída).
+avisa por correo. Es lo único que detecta que se ha caído el propio Vigía (un monitor no puede avisar de su propia caída). Viene
+desactivado hasta que se configura, y GitHub lo desactiva tras 60 días sin actividad en el repositorio: hay que reactivarlo entonces.
 
 ### Lo que hace falta detrás de un proxy (y se hizo)
 

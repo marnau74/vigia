@@ -19,8 +19,9 @@ namespace Vigia.Worker.Planificacion;
 /// </summary>
 /// <remarks>
 /// El seguimiento de cada monitor se guarda en memoria entre comprobaciones para no leerlo de la base
-/// de datos cada vez. Es seguro porque el planificador nunca comprueba el mismo monitor dos veces a la
-/// vez. Si guardar falla, la copia en memoria ya no coincide con la base de datos y se descarta: la
+/// de datos cada vez. Un cerrojo por monitor hace que nunca lo toquen dos operaciones a la vez (el
+/// planificador no lanza dos comprobaciones del mismo monitor, pero pausarlo puede coincidir con una en
+/// curso). Si guardar falla, la copia en memoria ya no coincide con la base de datos y se descarta: la
 /// siguiente comprobación vuelve a cargarla.
 /// </remarks>
 public sealed class EjecutorDeMonitor(
@@ -34,6 +35,7 @@ public sealed class EjecutorDeMonitor(
     ILogger<EjecutorDeMonitor> log)
 {
     private readonly ConcurrentDictionary<Guid, SeguimientoDeMonitor> _seguimientos = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _cerrojos = new();
 
     public async Task EjecutarAsync(Dominio.Monitores.Monitor monitor, IReadOnlyList<VentanaMantenimiento> ventanas, CancellationToken cancellationToken)
     {
@@ -42,7 +44,9 @@ public sealed class EjecutorDeMonitor(
         var momento = reloj.GetUtcNow();
         var resultado = await ComprobarConReintentoAsync(monitor, cancellationToken);
         var enMantenimiento = VentanaMantenimiento.AlgunaCubre(ventanas, monitor.Id, momento);
+        var cerrojo = _cerrojos.GetOrAdd(monitor.Id, _ => new SemaphoreSlim(1, 1));
 
+        await cerrojo.WaitAsync(cancellationToken);
         try
         {
             await using var ambito = ambitos.CreateAsyncScope();
@@ -74,6 +78,55 @@ public sealed class EjecutorDeMonitor(
             _seguimientos.TryRemove(monitor.Id, out _);
             metricas.ErrorInterno();
             log.NoSeGuardo(excepcion, monitor.Id);
+        }
+        finally
+        {
+            cerrojo.Release();
+        }
+    }
+
+    /// <summary>
+    /// Anota que un monitor pausado se ha dejado de vigilar: pasa a «desconocido» y cierra su incidente sin
+    /// avisar. El momento es el de la pausa o, si el worker no lo vio a tiempo (estaba parado), cuando venció su
+    /// última comprobación. Un monitor que nunca se comprobó no tiene nada que anotar.
+    /// </summary>
+    public async Task DejarDeVigilarAsync(Guid monitorId, TimeSpan vigencia, CancellationToken cancellationToken)
+    {
+        var cerrojo = _cerrojos.GetOrAdd(monitorId, _ => new SemaphoreSlim(1, 1));
+
+        await cerrojo.WaitAsync(cancellationToken);
+        try
+        {
+            await using var ambito = ambitos.CreateAsyncScope();
+            var repositorio = new RepositorioSeguimiento(ambito.ServiceProvider.GetRequiredService<VigiaDbContext>());
+
+            // Se lee siempre de la base de datos: es lo que hay que corregir, y la copia en memoria se descarta igualmente.
+            _seguimientos.TryRemove(monitorId, out _);
+            var seguimiento = await repositorio.CargarSiExisteAsync(monitorId, cancellationToken);
+
+            if (seguimiento is null)
+            {
+                return;
+            }
+
+            var ahora = reloj.GetUtcNow();
+            var momento = seguimiento.UltimaObservacion is { } ultima && ultima + vigencia < ahora ? ultima + vigencia : ahora;
+            var eventos = seguimiento.DejarDeVigilar(momento);
+
+            if (eventos.Count > 0)
+            {
+                await repositorio.GuardarAsync(seguimiento, eventos, null, PlanDeAvisos.Crear(eventos, destinos.Lista, ahora), cancellationToken);
+                Contar([.. eventos]);
+            }
+        }
+        catch (Exception excepcion) when (excepcion is not OperationCanceledException)
+        {
+            metricas.ErrorInterno();
+            log.NoSeGuardo(excepcion, monitorId);
+        }
+        finally
+        {
+            cerrojo.Release();
         }
     }
 

@@ -116,8 +116,12 @@ public sealed class ComprobadorHttp(IHttpClientFactory fabrica, TimeProvider rel
     {
         await using var flujo = await respuesta.Content.ReadAsStreamAsync(cancellationToken);
 
-        var codificacion = Encoding.UTF8;
+        // Un descodificador con estado, no uno por bloque: una letra de varios bytes («ñ», «é» en UTF-8) puede quedar
+        // partida entre dos lecturas, y descodificar cada mitad por separado la convertiría en dos caracteres basura.
+        var codificacion = Codificacion(respuesta);
+        var descodificador = codificacion.GetDecoder();
         var buffer = new byte[16 * 1024];
+        var caracteres = new char[codificacion.GetMaxCharCount(buffer.Length)];
         var acumulado = new StringBuilder();
         var leidos = 0;
 
@@ -130,7 +134,8 @@ public sealed class ComprobadorHttp(IHttpClientFactory fabrica, TimeProvider rel
             }
 
             leidos += n;
-            acumulado.Append(codificacion.GetString(buffer, 0, n));
+            var descodificados = descodificador.GetChars(buffer, 0, n, caracteres, 0, flush: false);
+            acumulado.Append(caracteres, 0, descodificados);
 
             if (acumulado.ToString().Contains(palabra, StringComparison.OrdinalIgnoreCase))
             {
@@ -138,13 +143,33 @@ public sealed class ComprobadorHttp(IHttpClientFactory fabrica, TimeProvider rel
             }
 
             // Se conserva el final por si la palabra queda partida entre dos bloques.
-            if (acumulado.Length > palabra.Length)
+            if (acumulado.Length >= palabra.Length)
             {
-                acumulado.Remove(0, acumulado.Length - palabra.Length);
+                acumulado.Remove(0, acumulado.Length - palabra.Length + 1);
             }
         }
 
         return false;
+    }
+
+    /// <summary>La codificación que declara la respuesta (<c>charset</c>); si no declara ninguna o no se conoce, UTF-8.</summary>
+    private static Encoding Codificacion(HttpResponseMessage respuesta)
+    {
+        var declarada = respuesta.Content.Headers.ContentType?.CharSet?.Trim('"', ' ');
+
+        if (string.IsNullOrEmpty(declarada))
+        {
+            return Encoding.UTF8;
+        }
+
+        try
+        {
+            return Encoding.GetEncoding(declarada);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.UTF8;
+        }
     }
 
     private static Dictionary<string, string> Detalles(HttpResponseMessage respuesta, Uri direccionFinal, int redirecciones, MedidasDeConexion medidas)

@@ -240,21 +240,22 @@ public class AvisosWorkerTests : BaseWorkerTest
         await using var entorno = new EntornoDeWorker(Cadena, Inicio);
         entorno.Comprobador.Respuesta = (_, _) => Fallo();
 
+        var monitores = new List<MonitorDeDominio>();
+
         for (var n = 1; n <= 15; n++)
         {
-            await entorno.Ejecutor.EjecutarAsync(await GuardarAsync(n), [], Cancelacion);
+            monitores.Add(await GuardarAsync(n));
         }
 
-        // Hay que llegar a tres fallos por monitor.
-        foreach (var numero in Enumerable.Range(1, 15))
+        // Tres fallos por monitor, una ronda por minuto (como los comprobaría el worker).
+        for (var ronda = 0; ronda < 3; ronda++)
         {
-            await using var db = entorno.NuevoContexto();
-            var monitor = await db.Monitores.SingleAsync(m => m.Nombre == $"Monitor {numero}", Cancelacion);
-            for (var i = 0; i < 2; i++)
+            foreach (var monitor in monitores)
             {
-                entorno.Reloj.Advance(Minuto);
                 await entorno.Ejecutor.EjecutarAsync(monitor, [], Cancelacion);
             }
+
+            entorno.Reloj.Advance(Minuto);
         }
 
         entorno.Correo.Antes = async (_, cancelacion) => await Task.Delay(5, cancelacion);

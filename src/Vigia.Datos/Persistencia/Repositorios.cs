@@ -12,6 +12,24 @@ public sealed class RepositorioMonitores(VigiaDbContext db)
     public async Task<IReadOnlyList<Dominio.Monitores.Monitor>> ListarActivosAsync(CancellationToken cancellationToken) =>
         await db.Monitores.AsNoTracking().Where(m => m.Activo).OrderBy(m => m.Nombre).ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// Los monitores pausados cuyo seguimiento todavía dice cómo está el servicio (un estado distinto de
+    /// «desconocido» o un incidente abierto): hay que anotar que se dejaron de vigilar.
+    /// </summary>
+    public async Task<IReadOnlyList<(Guid Id, TimeSpan Vigencia)>> ListarPausadosSinCerrarAsync(CancellationToken cancellationToken)
+    {
+        var filas = await db.Monitores.AsNoTracking()
+            .Where(m => !m.Activo)
+            .Join(
+                db.Seguimientos.AsNoTracking().Where(s => s.Estado != Dominio.Monitores.EstadoMonitor.Desconocido || s.IncidenteAbiertoId != null),
+                m => m.Id,
+                s => s.MonitorId,
+                (m, _) => new { m.Id, m.Intervalo })
+            .ToListAsync(cancellationToken);
+
+        return [.. filas.Select(f => (f.Id, f.Intervalo * Dominio.Monitores.Monitor.ComprobacionesToleradas))];
+    }
+
     /// <summary>Las ventanas de mantenimiento que todavía no han terminado (en curso o futuras).</summary>
     public async Task<IReadOnlyList<VentanaMantenimiento>> ListarVentanasVigentesAsync(DateTimeOffset ahora, CancellationToken cancellationToken) =>
         await db.VentanasMantenimiento.AsNoTracking().Where(v => v.Fin > ahora).ToListAsync(cancellationToken);
@@ -35,13 +53,17 @@ public sealed class RepositorioMonitores(VigiaDbContext db)
 public sealed class RepositorioSeguimiento(VigiaDbContext db)
 {
     /// <summary>El seguimiento guardado, o uno nuevo (sin datos) si el monitor todavía no tiene.</summary>
-    public async Task<SeguimientoDeMonitor> CargarAsync(Guid monitorId, DateTimeOffset ahora, CancellationToken cancellationToken)
+    public async Task<SeguimientoDeMonitor> CargarAsync(Guid monitorId, DateTimeOffset ahora, CancellationToken cancellationToken) =>
+        await CargarSiExisteAsync(monitorId, cancellationToken) ?? new SeguimientoDeMonitor(monitorId, ahora);
+
+    /// <summary>El seguimiento guardado, o nada si el monitor nunca se ha comprobado.</summary>
+    public async Task<SeguimientoDeMonitor?> CargarSiExisteAsync(Guid monitorId, CancellationToken cancellationToken)
     {
         var fila = await db.Seguimientos.AsNoTracking().FirstOrDefaultAsync(s => s.MonitorId == monitorId, cancellationToken);
 
         if (fila is null)
         {
-            return new SeguimientoDeMonitor(monitorId, ahora);
+            return null;
         }
 
         var incidente = fila.IncidenteAbiertoId is { } id
@@ -51,19 +73,22 @@ public sealed class RepositorioSeguimiento(VigiaDbContext db)
         return new SeguimientoDeMonitor(monitorId, fila.Estado, fila.FallosSeguidos, fila.Desde, fila.UltimaObservacion, incidente);
     }
 
+    /// <param name="resultado">La comprobación que provoca los cambios, o nada si no hay comprobación (al pausar el monitor).</param>
     public async Task GuardarAsync(
         SeguimientoDeMonitor seguimiento,
         IReadOnlyList<EventoDeSeguimiento> eventos,
-        ResultadoEntidad resultado,
+        ResultadoEntidad? resultado,
         IReadOnlyList<Aviso> avisos,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(seguimiento);
         ArgumentNullException.ThrowIfNull(eventos);
-        ArgumentNullException.ThrowIfNull(resultado);
         ArgumentNullException.ThrowIfNull(avisos);
 
-        db.Resultados.Add(resultado);
+        if (resultado is not null)
+        {
+            db.Resultados.Add(resultado);
+        }
 
         // Los avisos entran en la misma transacción que el cambio de estado que los provoca (bandeja de salida).
         db.Avisos.AddRange(avisos);

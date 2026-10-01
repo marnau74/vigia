@@ -24,15 +24,16 @@ poner en producción en un VPS con una guía paso a paso.
 
 - **Un aviso por transición, sin duplicados ni pérdidas.** Los avisos se guardan en la misma transacción que el incidente (bandeja
   de salida) y un índice único de la base de datos impide repetirlos, aunque haya reinicios o varias instancias.
-- **La disponibilidad que enseña es honesta.** Se calcula sobre el tiempo en cada estado, el mantenimiento no cuenta, sin datos dice
-  «—» y no un 100 %, y el porcentaje se trunca (99,9996 % se ve como 99,99 %).
+- **La disponibilidad que enseña es honesta.** Se calcula sobre el tiempo en cada estado, el mantenimiento no cuenta, el tiempo sin
+  vigilar (un monitor pausado, el worker parado) tampoco, sin datos dice «—» y no un 100 %, y el porcentaje se trunca (99,9996 % se ve
+  como 99,99 %).
 - **Seguridad de una herramienta que hace peticiones a direcciones de otros** (SSRF): una guardia resuelve el DNS una sola vez,
   conecta a la IP ya validada y bloquea los rangos internos y los metadatos de las nubes.
 - **Escala sin trucos raros:** los resultados van en una tabla particionada por mes (retener es un `DROP TABLE` instantáneo) con agregados
   por hora y por día; el planificador usa una cola de prioridad y concurrencia acotada.
 - **Accesible de verdad:** el estado nunca se indica solo con color, las gráficas son SVG propio con descripción y tabla de datos,
   hay claro y oscuro y funciona en móvil.
-- **Se prueba todo lo que importa:** más de 840 tests, con PostgreSQL y Mailpit reales en contenedor, un servidor de Telegram falso, simulaciones
+- **Se prueba todo lo que importa:** más de 860 tests, con PostgreSQL y Mailpit reales en contenedor, un servidor de Telegram falso, simulaciones
   con reloj controlado y las defensas comprobadas rompiéndolas a propósito para ver que los tests fallan.
 
 ## Cómo está pensado
@@ -93,11 +94,14 @@ stateDiagram-v2
     Caido --> Operativo : OK, cierra el incidente y avisa
     Operativo --> Mantenimiento : ventana de mantenimiento
     Mantenimiento --> Desconocido : fin de la ventana
+    Caido --> Desconocido : pausa o hueco sin comprobar, cierra el incidente sin avisar
 ```
 
 - **Un fallo aislado no avisa:** hacen falta N fallos seguidos (3 por defecto) para dar un servicio por caído.
 - **Un aviso por transición:** una caída y una recuperación por incidente, sin repeticiones.
 - **El mantenimiento no cuenta:** ni abre incidentes ni avisa ni entra en la disponibilidad.
+- **Lo que no se mira, no se sabe:** cada comprobación vale tres intervalos. Si se pausa el monitor o el worker se para, ese tiempo es
+  «desconocido» y no se suma al último estado visto (ver [ADR 0003](docs/adr/0003-maquina-de-estados-y-disponibilidad.md)).
 
 La disponibilidad se calcula sobre el tiempo pasado en cada estado:
 

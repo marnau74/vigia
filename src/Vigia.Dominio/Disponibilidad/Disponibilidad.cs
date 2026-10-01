@@ -50,6 +50,92 @@ public sealed record TiemposPorEstado
         return new TiemposPorEstado(tiempos);
     }
 
+    /// <summary>
+    /// Como <see cref="DeTramos"/>, pero solo cuenta en su estado el tiempo vigilado: cada comprobación
+    /// (<paramref name="observaciones"/>) vale <paramref name="vigencia"/> desde que se hizo. El tiempo que no cubre
+    /// ninguna (un monitor pausado, un worker parado) cuenta como «desconocido», aunque el último estado registrado
+    /// fuera otro: sin mirar no se sabe cómo estaba el servicio.
+    /// </summary>
+    /// <remarks>Los tramos deben cubrir el periodo entero, como los que devuelve <see cref="TramosDe"/>.</remarks>
+    public static TiemposPorEstado DeTramosVigilados(
+        IEnumerable<TramoDeEstado> tramos,
+        IEnumerable<DateTimeOffset> observaciones,
+        TimeSpan vigencia,
+        DateTimeOffset desde,
+        DateTimeOffset hasta)
+    {
+        ArgumentNullException.ThrowIfNull(tramos);
+        ArgumentNullException.ThrowIfNull(observaciones);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(vigencia, TimeSpan.Zero);
+
+        var cubiertos = Cubiertos(observaciones, vigencia, desde, hasta);
+        var tiempos = new TimeSpan[Enum.GetValues<EstadoMonitor>().Length];
+
+        foreach (var tramo in tramos)
+        {
+            var inicio = tramo.Inicio > desde ? tramo.Inicio : desde;
+            var fin = tramo.Fin < hasta ? tramo.Fin : hasta;
+
+            if (fin <= inicio)
+            {
+                continue;
+            }
+
+            var vigilado = TimeSpan.Zero;
+
+            foreach (var (cubiertoDesde, cubiertoHasta) in cubiertos)
+            {
+                var a = cubiertoDesde > inicio ? cubiertoDesde : inicio;
+                var b = cubiertoHasta < fin ? cubiertoHasta : fin;
+
+                if (b > a)
+                {
+                    vigilado += b - a;
+                }
+            }
+
+            tiempos[(int)tramo.Estado] += vigilado;
+            tiempos[(int)EstadoMonitor.Desconocido] += fin - inicio - vigilado;
+        }
+
+        return new TiemposPorEstado(tiempos);
+    }
+
+    /// <summary>Los tramos de [desde, hasta) que cubre alguna comprobación, unidos y en orden.</summary>
+    private static List<(DateTimeOffset Desde, DateTimeOffset Hasta)> Cubiertos(
+        IEnumerable<DateTimeOffset> observaciones,
+        TimeSpan vigencia,
+        DateTimeOffset desde,
+        DateTimeOffset hasta)
+    {
+        var cubiertos = new List<(DateTimeOffset Desde, DateTimeOffset Hasta)>();
+
+        foreach (var momento in observaciones.Order())
+        {
+            var inicio = momento > desde ? momento : desde;
+            var fin = momento + vigencia < hasta ? momento + vigencia : hasta;
+
+            if (fin <= inicio)
+            {
+                continue;
+            }
+
+            if (cubiertos.Count > 0 && inicio <= cubiertos[^1].Hasta)
+            {
+                if (fin > cubiertos[^1].Hasta)
+                {
+                    cubiertos[^1] = (cubiertos[^1].Desde, fin);
+                }
+            }
+            else
+            {
+                cubiertos.Add((inicio, fin));
+            }
+        }
+
+        return cubiertos;
+    }
+
     /// <summary>Tiempos por estado a partir de sus duraciones (para reconstruir un agregado guardado).</summary>
     public static TiemposPorEstado De(IEnumerable<(EstadoMonitor Estado, TimeSpan Duracion)> partes)
     {
@@ -161,7 +247,8 @@ public readonly record struct PorcentajeDisponibilidad(decimal Fraccion)
 /// <list type="bullet">
 /// <item>El <b>mantenimiento no cuenta</b> ni a favor ni en contra: es tiempo planificado.</item>
 /// <item>El tiempo <b>desconocido no cuenta</b> (no se sabe cómo estaba; contarlo como bien sería inventar un dato,
-/// y contarlo como mal, penalizar por no haber mirado).</item>
+/// y contarlo como mal, penalizar por no haber mirado). Incluye el tiempo sin vigilar: un monitor pausado o un
+/// worker parado no alargan el último estado visto (<see cref="TiemposPorEstado.DeTramosVigilados"/>).</item>
 /// <item>El estado <b>sospechoso cuenta como en pie</b>: un fallo aislado no es una caída hasta que se confirma.
 /// Cuando se confirma, el tiempo caído se cuenta desde que se abre el incidente.</item>
 /// <item>Sin datos (nada en pie ni caído) el resultado es <c>null</c>, no 100 %.</item>

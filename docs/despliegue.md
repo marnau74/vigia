@@ -132,7 +132,13 @@ Con esto, cada `git tag vX.Y.Z` construye y despliega solo. En GitHub → *Setti
 ## 8. Que el monitor se vigile a sí mismo
 
 Si Vigía se cae, nadie avisa. El flujo `latido` comprueba cada 10 minutos, **desde fuera**, que la página de estado responde; si no,
-falla y GitHub te escribe. Actívalo definiendo la variable del repositorio `URL_ESTADO` = `https://<tu DOMINIO>/estado/<grupo>`.
+falla y GitHub te escribe. Viene desactivado (si no, se lanzaría 144 veces al día sin hacer nada). Para activarlo:
+
+1. Define la variable del repositorio `URL_ESTADO` = `https://<tu DOMINIO>/estado/<grupo>`.
+2. Activa el flujo: `gh workflow enable latido` (o *Actions → latido → Enable workflow*).
+
+Ojo: GitHub desactiva los flujos programados de un repositorio público tras **60 días sin actividad** en él, y avisa por correo.
+Si te llega ese aviso, vuelve a activarlo (paso 2): si no, el latido se para sin que nadie lo note.
 
 ## 9. Avisos por correo y Telegram
 
@@ -150,6 +156,8 @@ Se configuran en `/opt/vigia/.env` (cada canal solo se usa si está completo) y 
   que nunca se ha restaurado es una esperanza, no una copia. Si falla, `systemctl status vigia-prueba-restauracion` lo dice.
 - **Una copia en el mismo servidor no protege de perder el servidor.** Copia fuera: define `DESTINO_RSYNC` (p. ej. `usuario@otra-maquina:/copias/vigia/`)
   en el servicio `vigia-copia` (`sudo systemctl edit vigia-copia` → `Environment=DESTINO_RSYNC=...`), o baja las copias periódicamente con `rsync`.
+  Al destino solo se **añaden** copias, nunca se borran: si se perdieran las del servidor, una réplica exacta borraría también las de
+  fuera. La rotación allí es cosa del destino, por ejemplo con `find /copias/vigia -name 'vigia-*.dump' -mtime +60 -delete` en su cron.
 - Las copias contienen la configuración, los incidentes y los agregados; el detalle de cada comprobación solo se conserva 14 días (ADR 0004).
 
 **Restaurar** (sustituye la base de datos actual; para la aplicación mientras dura):

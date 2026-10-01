@@ -15,9 +15,11 @@ namespace Vigia.Dominio.Seguimiento;
 /// Sospechoso ─N fallos seguidos→ Caido  (abre incidente y avisa una vez)
 /// Caido ─OK→ Operativo/Degradado        (cierra el incidente y avisa una vez)
 /// cualquiera ─ventana de mantenimiento→ Mantenimiento ─fin→ Desconocido
+/// cualquiera ─pausa, o hueco sin comprobaciones→ Desconocido   (cierra el incidente sin avisar)
 /// </code>
 /// Al salir de un mantenimiento se vuelve a «Desconocido», no a «Operativo»: nadie sabe cómo está el
-/// servicio hasta la primera comprobación, y si sigue caído se detecta por el camino normal.
+/// servicio hasta la primera comprobación, y si sigue caído se detecta por el camino normal. Lo mismo al
+/// dejar de vigilarlo: el tiempo sin comprobaciones no se atribuye al último estado visto.
 /// </remarks>
 public sealed class SeguimientoDeMonitor
 {
@@ -62,7 +64,9 @@ public sealed class SeguimientoDeMonitor
     /// <summary>
     /// Anota una comprobación y devuelve lo que ha pasado, en orden. Una observación de un momento
     /// anterior o igual a la última ya vista se ignora (un reintento tras un reinicio no debe contar dos veces),
-    /// y las que llegan durante un mantenimiento tampoco cuentan.
+    /// y las que llegan durante un mantenimiento tampoco cuentan. Si desde la anterior ha pasado más de lo que
+    /// vale una comprobación (<see cref="ReglasDeSeguimiento.Vigencia"/>), primero se anota que se dejó de
+    /// vigilar cuando venció la anterior.
     /// </summary>
     public IReadOnlyList<EventoDeSeguimiento> Registrar(Observacion observacion, ReglasDeSeguimiento reglas)
     {
@@ -74,9 +78,36 @@ public sealed class SeguimientoDeMonitor
             return [];
         }
 
-        UltimaObservacion = observacion.Momento.ToUniversalTime();
+        var eventos = new List<EventoDeSeguimiento>();
 
-        return observacion.Correcto ? RegistrarExito(observacion, reglas) : RegistrarFallo(observacion, reglas);
+        if (reglas.Vigencia is { } vigencia && UltimaObservacion is { } anterior && observacion.Momento - anterior > vigencia)
+        {
+            eventos.AddRange(DejarDeVigilar(anterior + vigencia));
+        }
+
+        UltimaObservacion = observacion.Momento.ToUniversalTime();
+        eventos.AddRange(observacion.Correcto ? RegistrarExito(observacion, reglas) : RegistrarFallo(observacion, reglas));
+
+        return eventos;
+    }
+
+    /// <summary>
+    /// Se deja de vigilar el monitor (se ha pausado, o hubo un hueco sin comprobaciones): desde
+    /// <paramref name="momento"/> no se sabe cómo está. Pasa a «desconocido» y cierra el incidente abierto sin
+    /// avisar, porque nadie ha visto que el servicio se recupere; si al volver a mirar sigue caído, se abre otro
+    /// por el camino normal. Es idempotente.
+    /// </summary>
+    public IReadOnlyList<EventoDeSeguimiento> DejarDeVigilar(DateTimeOffset momento)
+    {
+        // Nunca antes del estado actual: la línea de tiempo de cambios tiene que ir hacia delante.
+        var desde = momento > Desde ? momento : Desde;
+        var eventos = new List<EventoDeSeguimiento>();
+
+        FallosSeguidos = 0;
+        Cambiar(EstadoMonitor.Desconocido, desde, eventos);
+        CerrarIncidente(MotivoDeCierre.SinVigilancia, desde, eventos);
+
+        return eventos;
     }
 
     /// <summary>

@@ -2,7 +2,8 @@ name: latido
 
 # Vigía se vigila a sí mismo: si se cae el propio monitor, no hay nadie que avise. Este flujo, desde fuera del servidor, comprueba
 # cada diez minutos que la página de estado responde; si no, el flujo falla y GitHub avisa por correo al propietario del repositorio.
-# Se activa definiendo la variable del repositorio URL_ESTADO (p. ej. https://estado.ejemplo.com/estado/servicios).
+# Viene desactivado: se activa definiendo la variable del repositorio URL_ESTADO (p. ej. https://estado.ejemplo.com/estado/servicios)
+# y activando el flujo (`gh workflow enable latido`). Ver docs/despliegue.md, paso 8.
 on:
   schedule:
     - cron: "*/10 * * * *"

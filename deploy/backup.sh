@@ -23,7 +23,10 @@ find "$DIR" -name 'vigia-*.dump' -mtime +"$RETENCION_DIAS" -delete
 find "$DIR" -name 'vigia-*.dump.tmp' -mmin +60 -delete
 
 if [ -n "${DESTINO_RSYNC:-}" ]; then
-    rsync -a --delete-after "$DIR/" "$DESTINO_RSYNC"
+    # Solo se añaden copias, nunca se borran fuera: si aquí se perdieran las locales (disco, error, intrusión),
+    # una réplica con --delete borraría también las de fuera, que son justo las que deben sobrevivir.
+    # La retención del destino se gestiona allí (ver docs/despliegue.md).
+    rsync -a --include='vigia-*.dump' --exclude='*' "$DIR/" "$DESTINO_RSYNC"
 fi
 
 echo "Copia hecha: $fichero ($(du -h "$fichero" | cut -f1))"

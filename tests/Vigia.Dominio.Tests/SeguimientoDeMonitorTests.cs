@@ -72,6 +72,9 @@ internal sealed class Banco
         return eventos;
     }
 
+    /// <summary>Pasa el tiempo sin ninguna comprobación (el monitor está pausado o el worker, parado).</summary>
+    public void Esperar(TimeSpan tiempo) => Ahora += tiempo;
+
     public int Abiertos => Eventos.OfType<IncidenteAbierto>().Count();
 
     public int Cerrados => Eventos.OfType<IncidenteCerrado>().Count();
@@ -484,5 +487,106 @@ public class SeguimientoDeMonitorTests
 
             _ = abiertosAlEntrar;
         }
+    }
+}
+
+public class SinVigilanciaTests
+{
+    private static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(3);
+
+    private static Banco ConVigencia(int fallos = 3)
+    {
+        var banco = new Banco(fallos);
+        banco.Reglas = banco.Reglas with { Vigencia = Vigencia };
+
+        return banco;
+    }
+
+    [Fact]
+    public void Un_hueco_mayor_que_la_vigencia_pasa_a_desconocido_desde_que_vencio_la_ultima_comprobacion()
+    {
+        var banco = ConVigencia().Pasos("OO");
+        var ultima = banco.Ahora;
+
+        banco.Esperar(TimeSpan.FromHours(2));
+        var eventos = banco.Paso('O');
+
+        var cambios = eventos.OfType<EstadoCambiado>().ToList();
+        cambios.Select(c => c.Nuevo).ShouldBe([EstadoMonitor.Desconocido, EstadoMonitor.Operativo]);
+        cambios[0].Momento.ShouldBe(ultima + Vigencia, "el último estado solo vale mientras lo respalda la comprobación");
+        banco.Estado.ShouldBe(EstadoMonitor.Operativo);
+    }
+
+    [Fact]
+    public void Un_retraso_dentro_de_la_vigencia_no_es_un_hueco()
+    {
+        var banco = ConVigencia().Pasos("O");
+
+        banco.Esperar(TimeSpan.FromMinutes(1));
+        var eventos = banco.Paso('O');
+
+        eventos.ShouldBeEmpty("dos minutos entre comprobaciones caben en una vigencia de tres");
+    }
+
+    [Fact]
+    public void Un_hueco_estando_caido_cierra_el_incidente_sin_vigilancia_y_sin_avisar_y_si_sigue_caido_se_abre_otro()
+    {
+        var banco = ConVigencia().Pasos("FFF");
+        var primero = banco.Seguimiento.IncidenteAbierto!;
+        var ultima = banco.Ahora;
+
+        banco.Esperar(TimeSpan.FromHours(1));
+        banco.Pasos("FFF");
+
+        primero.CerradoPor.ShouldBe(MotivoDeCierre.SinVigilancia);
+        primero.CerradoEn.ShouldBe(ultima + Vigencia);
+        banco.Abiertos.ShouldBe(2, "al volver a mirar sigue caído: es otro incidente, avisado por el camino normal");
+        Avisos.PlanDeAvisos.Crear(banco.Eventos, [new Avisos.DestinoDeAviso(Avisos.CanalAviso.Correo, "guardia@ejemplo.com")], banco.Ahora)
+            .Count(a => a.Tipo == Avisos.TipoAviso.Recuperacion).ShouldBe(0, "nadie ha visto que se recuperase");
+    }
+
+    [Fact]
+    public void Sin_vigencia_en_las_reglas_no_se_miran_los_huecos()
+    {
+        var banco = new Banco().Pasos("O");
+
+        banco.Esperar(TimeSpan.FromDays(1));
+
+        banco.Paso('O').ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Dejar_de_vigilar_pasa_a_desconocido_cierra_el_incidente_y_es_idempotente()
+    {
+        var banco = ConVigencia().Pasos("FFF");
+        var incidente = banco.Seguimiento.IncidenteAbierto!;
+
+        var eventos = banco.Seguimiento.DejarDeVigilar(banco.Ahora.AddMinutes(1));
+
+        eventos.Select(e => e.GetType()).ShouldBe([typeof(EstadoCambiado), typeof(IncidenteCerrado)]);
+        banco.Estado.ShouldBe(EstadoMonitor.Desconocido);
+        banco.Seguimiento.FallosSeguidos.ShouldBe(0);
+        incidente.CerradoPor.ShouldBe(MotivoDeCierre.SinVigilancia);
+        banco.Seguimiento.DejarDeVigilar(banco.Ahora.AddMinutes(2)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Dejar_de_vigilar_nunca_anota_un_cambio_anterior_al_estado_actual()
+    {
+        var banco = ConVigencia().Pasos("OF");
+        var desde = banco.Seguimiento.Desde;
+
+        var cambio = banco.Seguimiento.DejarDeVigilar(desde.AddHours(-1)).OfType<EstadoCambiado>().Single();
+
+        cambio.Momento.ShouldBe(desde);
+    }
+
+    [Fact]
+    public void La_vigencia_de_un_monitor_es_de_tres_intervalos()
+    {
+        var monitor = Monitores.Monitor.Crear("Web", new ConfiguracionHttp(new Uri("https://ejemplo.com/")), TimeSpan.FromMinutes(5), 3, null, null, Banco.Inicio).Valor;
+
+        monitor.VigenciaDeUnaComprobacion.ShouldBe(TimeSpan.FromMinutes(15));
+        ReglasDeSeguimiento.De(monitor).Vigencia.ShouldBe(TimeSpan.FromMinutes(15));
     }
 }
