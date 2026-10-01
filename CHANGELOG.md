@@ -22,6 +22,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); v
 - `publicar` pasa la CI completa antes de construir y publicar las imágenes.
 - El `latido` viene desactivado hasta configurarlo (antes se lanzaba cada diez minutos sin hacer nada).
 
+### Seguridad
+- Las acciones de GitHub van fijadas por SHA (con la versión en un comentario) en lugar de por
+  etiqueta, que su autor puede mover; Dependabot las actualiza agrupadas.
+
 ## [1.0.0] - 2026-09-30
 
 Primera versión completa.
