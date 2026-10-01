@@ -6,7 +6,10 @@ set -euo pipefail
 
 DIR="${DIR_COPIAS:-/var/backups/vigia}"
 copia="${1:-$(find "$DIR" -maxdepth 1 -name 'vigia-*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)}"
-[ -n "$copia" ] && [ -r "$copia" ] || { echo "No hay ninguna copia que probar en $DIR" >&2; exit 1; }
+if [ -z "$copia" ] || [ ! -r "$copia" ]; then
+  echo "No hay ninguna copia que probar en $DIR" >&2
+  exit 1
+fi
 
 cd "$(dirname "$0")"
 prueba="vigia_prueba_restauracion"
