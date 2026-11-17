@@ -25,6 +25,13 @@ public class AgregadorTests : BaseDeDatosTest
     private async Task ResultadosAsync(Guid monitorId, params (DateTimeOffset Momento, bool Correcto, int LatenciaMs, bool Mantenimiento)[] filas)
     {
         await using var db = NuevoContexto();
+        // Las fechas de estos tests son fijas y la base de datos solo trae las particiones del mes real en curso
+        var particiones = new Particiones(db);
+        foreach (var mes in filas.Select(f => Particiones.InicioDelMes(f.Momento)).Distinct())
+        {
+            await particiones.CrearAsync(mes, Cancelacion);
+        }
+
         db.Resultados.AddRange(filas.Select(f => new ResultadoEntidad
         {
             MonitorId = monitorId,
