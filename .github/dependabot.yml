@@ -4,6 +4,13 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # El proyecto sigue en .NET 10 (LTS): los paquetes de Microsoft solo suben dentro de la 10.x, que
+    # es por donde llegan los parches de seguridad. El salto a .NET 11 se hace a mano y de una vez.
+    ignore:
+      - dependency-name: "Microsoft.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
     groups:
       dependencias:
         patterns: ["*"]
@@ -19,3 +26,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Las imágenes de .NET se quedan en la 10.0, como los paquetes
+    ignore:
+      - dependency-name: "*dotnet/*"
+        update-types: ["version-update:semver-major"]
