@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 
+using MailKit;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 
@@ -75,7 +76,7 @@ public sealed class CanalCorreo(IOptions<OpcionesSmtp> opciones) : ICanalDeAviso
                 await cliente.AuthenticateAsync(ajustes.Usuario, ajustes.Contrasena ?? string.Empty, cancellationToken);
             }
 
-            await cliente.SendAsync(correo, cancellationToken);
+            await cliente.SendAsync(new SendRequest(correo), cancellationToken);
             await cliente.DisconnectAsync(quit: true, cancellationToken);
         }
         catch (Exception excepcion) when (excepcion is not OperationCanceledException and not AvisoNoEnviadoException)
